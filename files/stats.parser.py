@@ -9,14 +9,21 @@ import json
 import math
 import os.path
 import sys
+import platform
+import cPickle as pickle
 
 from pygtail import Pygtail
 
+from influxdb import InfluxDBClient
+
 parser = argparse.ArgumentParser()
 parser.add_argument('-f', '--file')
-parser.add_argument('-s', '--start')
-parser.add_argument('-m', '--maxlines', default=0)
+parser.add_argument('-s', '--start', type=int)
+parser.add_argument('-m', '--maxlines', default=0, type=int)
 parser.add_argument('-w', '--writestatusdir', default='.')
+parser.add_argument('-H', '--hostname', default=platform.node())
+parser.add_argument('-l', '--logname', default='')
+parser.add_argument('-d', '--datacenter', default='')
 
 args = parser.parse_args()
 print(args)
@@ -60,6 +67,14 @@ mbs_tags = {
     'upstreams_header_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
 }
 
+def dd_int():
+    return defaultdict(int)
+
+def dd_float():
+    return defaultdict(float)
+
+def dd_any():
+    return defaultdict()
 
 def factory():
     return lambda x: x
@@ -87,7 +102,7 @@ def parse_upstreams(row):
                 'upstream_header_time'
              ):
         chains[k] = list(itertools.chain.from_iterable(split_upstream(row[k])))
-    r['status'] = defaultdict(lambda : defaultdict(int))
+    r['status'] = defaultdict(dd_int)
     r['response_time'] = defaultdict(float)
     r['connect_time'] = defaultdict(float)
     r['header_time'] = defaultdict(float)
@@ -110,7 +125,6 @@ def parse_upstreams(row):
 
 def parsefile(pygtail, maxlines = 1000, start=0):
     storage = defaultdict(list)
-    maxmin = 0
     n = 0
     for line in pygtail:
         n += 1
@@ -144,8 +158,6 @@ def parsefile(pygtail, maxlines = 1000, start=0):
                 float(row['msec'])
             )
             minute = d.minute + d.hour * 100 + d.day * 100**2 + d.month * 100**3 + d.year * 100**4
-            if minute > maxmin:
-                maxmin = minute
 
             del row['msec']
             del row['version']
@@ -160,11 +172,12 @@ def parsefile(pygtail, maxlines = 1000, start=0):
             print(e, line)
         maxlines -= 1
         if maxlines == 0:
+            pygtail._update_offset_file()
             break
-    return (storage, maxmin)
+    return storage
 
 
-def parse_storage(storage, maxmin, previous_leftover = {}):
+def parse_storage(storage, previous_leftover = None):
     leftover = dict()
     mbs = dict()
     mbs['hits'] = defaultdict(int)
@@ -190,15 +203,42 @@ def parse_storage(storage, maxmin, previous_leftover = {}):
     mbs['upstreams_connect_time_mean'] = defaultdict(float)
     mbs['upstreams_header_time_mean'] = defaultdict(float)
 
-    for k in storage.keys():
-        if k in previous_leftover:
-            storage[k] = previous_leftover[k] + storage[k]
+    last_minute = max(storage.keys())
+
+    def statmins(sto, name):
+        first = int(min(sto.keys()))
+        last = int(max(sto.keys()))
+        length = len(sto.keys())
+        return "%s first=%d last=%d len=%d" % (name, first, last, length)
+
+    print(statmins(storage, "current"))
+
+    if previous_leftover is not None:
+        print(statmins(previous_leftover, "leftover"))
+        for k in storage.keys():
+            if k in previous_leftover.keys():
+                storage[k] += previous_leftover[k]
+                print("Appending %d elems from previous leftover, minute=%s" %
+                      (len(previous_leftover[k]), k))
+                del previous_leftover[k]
+        for k in previous_leftover.keys():
+            storage[k] = previous_leftover[k]
+            print("Adding %d elems from previous leftover, minute=%s" %
+                  (len(previous_leftover[k]), k))
             del previous_leftover[k]
+        assert(not len(previous_leftover))
+
+    first_minute = min(storage.keys())
+    skip_firstminute = (previous_leftover is None)
+
 #print(storage)
-    for k in storage.keys():
+    for k in sorted(storage.keys()):
         #print(k)
-        if k >= maxmin:
+        if k >= last_minute:
             leftover[k] = storage[k] # store for next run
+            continue
+        elif k == first_minute and skip_firstminute:
+            # skip first incomplete minute
             continue
         else:
             for r in storage[k]:
@@ -354,19 +394,17 @@ def parse_storage(storage, maxmin, previous_leftover = {}):
                 # mbs['upstreams_header_time_mean']
                 for k, v in mbs['_upstreams_header_time_premean'].items():
                     mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
-    final_leftover = previous_leftover.copy()
-    final_leftover.update(leftover)
     return (mbs, leftover)
 
 def save_obj(obj, filepath):
-    jsonfilename = filepath+ '.status.json.gz'
-    with gzip.GzipFile(jsonfilename, 'wb') as f:
-        json.dump(obj, f)
+    filename = filepath+ '.mbstats.gz'
+    with gzip.GzipFile(filename, 'wb') as f:
+        pickle.dump(obj, f)
 
 def load_obj(filepath):
-    jsonfilename = filepath + '.status.json.gz'
-    with gzip.GzipFile(jsonfilename, 'rb') as f:
-        return json.load(f)
+    filename = filepath + '.mbstats.gz'
+    with gzip.GzipFile(filename, 'rb') as f:
+        return pickle.load(f)
 
 
 
@@ -379,12 +417,15 @@ filename_leftover = os.path.join(statusdir, os.path.basename(filename) +
 
 pygtail = Pygtail(filename, offset_file=offset_file)
 
-storage, maxmin = parsefile(pygtail, maxlines=args.maxlines)
+storage = parsefile(pygtail, maxlines=args.maxlines)
+
+print(len(storage))
+
 try:
-    previous_leftover = load_obj('filename_leftover')
+    previous_leftover = load_obj(filename_leftover)
 except IOError:
-    previous_leftover = {}
-mbs, leftover = parse_storage(storage, maxmin, previous_leftover)
+    previous_leftover = None
+mbs, leftover = parse_storage(storage, previous_leftover)
 #print(leftover)
 #leftover = json.loads(json.dumps(leftover))
 save_obj(leftover, filename_leftover)
@@ -392,17 +433,53 @@ save_obj(leftover, filename_leftover)
 for k in mbs_tags:
     if k.startswith('_'):
         continue
-    print(mbs[k])
+#    print(mbs[k])
 
-def mbs2influx(mbs, host='x', logname='y'):
+def mbs2influx(mbs, host='x', logname='y', datacenter = ''):
     common_tags = {'host': host, 'logname': logname}
+    if datacenter:
+        common_tags['dc'] = datacenter
     extra_tags = dict()
+    points = []
     for measurement, tagnames in mbs_tags.items():
-        print(tagnames)
+#        print(tagnames)
         for tags, value in mbs[measurement].items():
-            print(tags)
-            influxtags = common_tags.copy()
-            influxtags.update(dict(zip(tagnames, tags[1:])))
-            print(influxtags)
+#            print(tags)
+            influxtags = dict(zip(tagnames, tags[1:]))
+            for k, v in influxtags.items():
+                if v is None:
+                    influxtags[k] = ''
+                if k == 'protocol':
+                    if v == 's':
+                        influxtags[k] = 'https'
+                    else:
+                        influxtags[k] = 'http'
+#            print(influxtags)
+            s = str(tags[0])
+            time = s[0:4]+'-'+s[4:6]+'-'+s[6:8]+'T'+s[8:10]+':'+s[10:12]+':59Z'
+            if measurement.endswith('_mean'):
+                field = "mean"
+            else:
+                field = "value"
+            fields = { field: value}
+ #           print time
+#            print fields
+            points.append({
+                "measurement": measurement,
+                "tags": influxtags,
+                "time": time,
+                "fields": fields
+            })
+    print(len(points))
+    client = InfluxDBClient('localhost', 8086, 'root', 'root', 'example')
+    #client.drop_database('example')
+    client.create_database('example')
+    client.write_points(points, tags = common_tags, time_precision='m')
 
-mbs2influx(mbs, host='ccx', logname='xxy')
+
+if args.logname:
+    logname = args.logname
+else:
+    logname = filename
+
+mbs2influx(mbs, host=args.hostname, logname=logname, datacenter=args.datacenter)
