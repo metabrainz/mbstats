@@ -2,8 +2,10 @@ from collections import defaultdict
 from influxdb import InfluxDBClient
 from pygtail import Pygtail
 import argparse
-#import cPickle as pickle
-import pickle
+try:
+    import cPickle as pickle
+except:
+    import pickle
 import csv
 import datetime
 import gzip
