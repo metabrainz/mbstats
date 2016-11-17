@@ -54,6 +54,7 @@ mbs_tags = {
     'status': ('vhost', 'protocol', 'loctag', 'status'),
     'bytes_sent': ('vhost', 'protocol', 'loctag'),
     'gzip_count': ('vhost', 'protocol', 'loctag'),
+    'gzip_percent': ('vhost', 'protocol', 'loctag'),
     'gzip_ratio_mean': ('vhost', 'protocol', 'loctag'),
     'request_length_mean': ('vhost', 'protocol', 'loctag'),
     'request_time_mean': ('vhost', 'protocol', 'loctag'),
@@ -196,6 +197,7 @@ def parse_storage(storage, previous_leftover = None):
     mbs['_upstreams_connect_time_premean'] = defaultdict(float)
     mbs['_upstreams_header_time_premean'] = defaultdict(float)
 
+    mbs['gzip_percent'] = defaultdict(float)
     mbs['gzip_ratio_mean'] = defaultdict(float)
     mbs['request_length_mean'] = defaultdict(float)
     mbs['request_time_mean'] = defaultdict(float)
@@ -235,10 +237,11 @@ def parse_storage(storage, previous_leftover = None):
     for k in sorted(storage.keys()):
         #print(k)
         if k >= last_minute:
+            print("Store last minute for next run %s" % k)
             leftover[k] = storage[k] # store for next run
             continue
         elif k == first_minute and skip_firstminute:
-            # skip first incomplete minute
+            print("Skipping first perhaps incomplete minute %s" % k) # skip first incomplete minute
             continue
         else:
             for r in storage[k]:
@@ -394,6 +397,17 @@ def parse_storage(storage, previous_leftover = None):
                 # mbs['upstreams_header_time_mean']
                 for k, v in mbs['_upstreams_header_time_premean'].items():
                     mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
+
+###### calculations of percentage
+
+            if mbs['hits']:
+                for k, v in mbs['hits'].items():
+                    if mbs['gzip_count'] and v:
+                        mbs['gzip_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
+                    else:
+                        mbs['gzip_percent'][k] = 0.0
+
+
     return (mbs, leftover)
 
 def save_obj(obj, filepath):
@@ -448,20 +462,17 @@ def mbs2influx(mbs, host='x', logname='y', datacenter = ''):
             influxtags = dict(zip(tagnames, tags[1:]))
             for k, v in influxtags.items():
                 if v is None:
-                    influxtags[k] = ''
+                    influxtags[k] = 'None'
                 if k == 'protocol':
                     if v == 's':
                         influxtags[k] = 'https'
                     else:
                         influxtags[k] = 'http'
+                influxtags[k] = str(v)
 #            print(influxtags)
             s = str(tags[0])
             time = s[0:4]+'-'+s[4:6]+'-'+s[6:8]+'T'+s[8:10]+':'+s[10:12]+':59Z'
-            if measurement.endswith('_mean'):
-                field = "mean"
-            else:
-                field = "value"
-            fields = { field: value}
+            fields = { 'value': value}
  #           print time
 #            print fields
             points.append({
@@ -470,7 +481,8 @@ def mbs2influx(mbs, host='x', logname='y', datacenter = ''):
                 "time": time,
                 "fields": fields
             })
-    print(len(points))
+    print("Adding %d points" % len(points))
+    print(points[0])
     client = InfluxDBClient('localhost', 8086, 'root', 'root', 'example')
     #client.drop_database('example')
     client.create_database('example')
