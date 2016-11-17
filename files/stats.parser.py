@@ -1,6 +1,8 @@
-#from influxdb import InfluxDBClient
 from collections import defaultdict
+from influxdb import InfluxDBClient
+from pygtail import Pygtail
 import argparse
+import cPickle as pickle
 import csv
 import datetime
 import gzip
@@ -8,26 +10,11 @@ import itertools
 import json
 import math
 import os.path
-import sys
 import platform
-import cPickle as pickle
+import re
+import shutil
+import sys
 
-from pygtail import Pygtail
-
-from influxdb import InfluxDBClient
-
-parser = argparse.ArgumentParser()
-parser.add_argument('-f', '--file')
-parser.add_argument('-s', '--start', type=int)
-parser.add_argument('-m', '--maxlines', default=0, type=int)
-parser.add_argument('-w', '--writestatusdir', default='.')
-parser.add_argument('-H', '--hostname', default=platform.node())
-parser.add_argument('-l', '--logname', default='')
-parser.add_argument('-d', '--datacenter', default='')
-
-args = parser.parse_args()
-print(args)
-#sys.exit()
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
@@ -173,8 +160,8 @@ def parsefile(pygtail, maxlines = 1000, start=0):
             print(e, line)
         maxlines -= 1
         if maxlines == 0:
-            pygtail._update_offset_file()
             break
+    pygtail._update_offset_file()
     return storage
 
 
@@ -219,9 +206,12 @@ def parse_storage(storage, previous_leftover = None):
         print(statmins(previous_leftover, "leftover"))
         for k in storage.keys():
             if k in previous_leftover.keys():
+                lenstorage_before = len(storage[k])
                 storage[k] += previous_leftover[k]
-                print("Appending %d elems from previous leftover, minute=%s" %
-                      (len(previous_leftover[k]), k))
+                lenstorage_after = len(storage[k])
+                print("Appending %d (%d->%d) elems from previous leftover, minute=%s" %
+                      (len(previous_leftover[k]), lenstorage_before,
+                       lenstorage_after, k))
                 del previous_leftover[k]
         for k in previous_leftover.keys():
             storage[k] = previous_leftover[k]
@@ -407,52 +397,21 @@ def parse_storage(storage, previous_leftover = None):
                     else:
                         mbs['gzip_percent'][k] = 0.0
 
-
+    for k in leftover.keys():
+        print("%d %d" % (k, len(leftover[k])))
+    print("Leftover = %d" % (len(leftover)))
     return (mbs, leftover)
 
 def save_obj(obj, filepath):
-    filename = filepath+ '.mbstats.gz'
-    with gzip.GzipFile(filename, 'wb') as f:
+    with gzip.GzipFile(filepath, 'wb') as f:
         pickle.dump(obj, f)
 
 def load_obj(filepath):
-    filename = filepath + '.mbstats.gz'
-    with gzip.GzipFile(filename, 'rb') as f:
+    with gzip.GzipFile(filepath, 'rb') as f:
         return pickle.load(f)
 
 
-
-
-filename = args.file
-statusdir = os.path.abspath(args.writestatusdir)
-offset_file = os.path.join(statusdir, os.path.basename(filename) + '.offset')
-filename_leftover = os.path.join(statusdir, os.path.basename(filename) +
-                                 '.leftover')
-
-pygtail = Pygtail(filename, offset_file=offset_file)
-
-storage = parsefile(pygtail, maxlines=args.maxlines)
-
-print(len(storage))
-
-try:
-    previous_leftover = load_obj(filename_leftover)
-except IOError:
-    previous_leftover = None
-mbs, leftover = parse_storage(storage, previous_leftover)
-#print(leftover)
-#leftover = json.loads(json.dumps(leftover))
-save_obj(leftover, filename_leftover)
-
-for k in mbs_tags:
-    if k.startswith('_'):
-        continue
-#    print(mbs[k])
-
 def mbs2influx(mbs, host='x', logname='y', datacenter = ''):
-    common_tags = {'host': host, 'logname': logname}
-    if datacenter:
-        common_tags['dc'] = datacenter
     extra_tags = dict()
     points = []
     for measurement, tagnames in mbs_tags.items():
@@ -481,17 +440,125 @@ def mbs2influx(mbs, host='x', logname='y', datacenter = ''):
                 "time": time,
                 "fields": fields
             })
-    print("Adding %d points" % len(points))
-    print(points[0])
-    client = InfluxDBClient('localhost', 8086, 'root', 'root', 'example')
-    #client.drop_database('example')
-    client.create_database('example')
-    client.write_points(points, tags = common_tags, time_precision='m')
+    return points
 
 
-if args.logname:
-    logname = args.logname
+def influxdb_client(host='localhost',
+                    port=8086,
+                    username='root',
+                    password='root',
+                    database='mbstats',
+                    timeout=40,
+                    deletedatabase=False):
+    client = InfluxDBClient(host=host,
+                            port=port,
+                            username=username,
+                            password=password,
+                            database=database,
+                            timeout=timeout)
+    if deletedatabase:
+        client.drop_database(database)
+    client.create_database(database)
+    return client
+
+def influxdb_send(client, points, tags, batch_size=200):
+    npoints = len(points)
+    if npoints:
+        print("Sending %d points" % npoints)
+        print(points[0])
+        return client.write_points(points, tags=tags, time_precision='m', batch_size=batch_size)
+    return True
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-f', '--file')
+parser.add_argument('-s', '--start', type=int)
+parser.add_argument('-m', '--maxlines', default=0, type=int)
+parser.add_argument('-w', '--writestatusdir', default='.')
+parser.add_argument('-H', '--hostname', default=platform.node())
+parser.add_argument('-l', '--logname', default='')
+parser.add_argument('-d', '--datacenter', default='')
+parser.add_argument('--deletedatabase', default=False)
+
+args = parser.parse_args()
+print(args)
+
+filename = args.file
+
+statusdir = os.path.abspath(args.writestatusdir)
+sane_filename = re.sub(r'\W', '_', filename)
+basepath = os.path.join(statusdir, sane_filename)
+filepath_offset = basepath + '.offset'
+filepath_leftover =  basepath + '.leftover'
+pid = os.getpid()
+fmt = "%s.%d.tmp"
+filepath_offset_tmp = fmt % (filepath_offset, pid)
+filepath_leftover_tmp =  fmt % (filepath_leftover, pid)
+filepath_offset_old = filepath_offset + '.old'
+filepath_leftover_old =  filepath_leftover + '.old'
+
+offset_written = False
+leftover_written = False
+
+def cleanup():
+    try:
+        os.remove(filepath_offset_tmp)
+        print("Removed %s" % filepath_offset_tmp)
+    except:
+        pass
+    try:
+        os.remove(filepath_leftover_tmp)
+        print("Removed %s" % filepath_leftover_tmp)
+    except:
+        pass
+
+def finalize():
+    try:
+        try:
+            os.unlink(filepath_offset_old)
+            shutil.copy2(filepath_offset, filepath_offset_old)
+        except:
+            pass
+        try:
+            os.unlink(filepath_leftover_old)
+            shutil.copy2(filepath_leftover, filepath_leftover_old)
+        except:
+            pass
+        os.rename(filepath_offset_tmp, filepath_offset)
+        os.rename(filepath_leftover_tmp, filepath_leftover)
+    except:
+        cleanup()
+        raise
+
+res = False
+try:
+    influxdb = influxdb_client(deletedatabase=args.deletedatabase)
+
+    if os.path.isfile(filepath_offset):
+        shutil.copy2(filepath_offset, filepath_offset_tmp)
+    pygtail = Pygtail(filename, offset_file=filepath_offset_tmp)
+
+    storage = parsefile(pygtail, maxlines=args.maxlines)
+    try:
+        previous_leftover = load_obj(filepath_leftover)
+    except IOError:
+        previous_leftover = None
+    mbs, leftover = parse_storage(storage, previous_leftover)
+#print(leftover)
+#leftover = json.loads(json.dumps(leftover))
+    save_obj(leftover, filepath_leftover_tmp)
+
+    points = mbs2influx(mbs)
+    if points:
+        tags = {
+            'host': args.hostname,
+            'logname': args.logname or filename,
+        }
+        if args.datacenter:
+            tags['dc'] = args.datacenter
+        influxdb_send(influxdb, points, tags)
+
+except:
+    cleanup()
+    raise
 else:
-    logname = filename
-
-mbs2influx(mbs, host=args.hostname, logname=logname, datacenter=args.datacenter)
+    finalize()
