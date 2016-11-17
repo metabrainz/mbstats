@@ -2,7 +2,8 @@ from collections import defaultdict
 from influxdb import InfluxDBClient
 from pygtail import Pygtail
 import argparse
-import cPickle as pickle
+#import cPickle as pickle
+import pickle
 import csv
 import datetime
 import gzip
@@ -36,6 +37,24 @@ fieldnames = [
     'upstream_header_time',
 ]
 
+pos_version = 0
+pos_msec = 1
+pos_vhost = 2
+pos_protocol = 3
+pos_loctag = 4
+pos_status = 5
+pos_bytes_sent = 6
+pos_gzip_ratio = 7
+pos_request_length = 8
+pos_request_time = 9
+pos_upstream_addr = 10
+pos_upstream_status = 11
+pos_upstream_response_time = 12
+pos_upstream_connect_time = 13
+pos_upstream_header_time = 14
+
+
+
 mbs_tags = {
     'hits': ('vhost', 'protocol', 'loctag'),
     'status': ('vhost', 'protocol', 'loctag', 'status'),
@@ -55,106 +74,153 @@ mbs_tags = {
     'upstreams_header_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
 }
 
-def dd_int():
-    return defaultdict(int)
-
-def dd_float():
-    return defaultdict(float)
-
-def dd_any():
-    return defaultdict()
-
 def factory():
     return lambda x: x
 types = defaultdict(factory)
 types['upstream_status'] = lambda x: int(x)
 types['upstream_response_time'] = types['upstream_connect_time'] = types['upstream_header_time'] = lambda x: float(x)
 
-def split_upstream(s):
-    return [x.split(' : ') for x in s.split(", ")]
-
+#@profile
 def parse_upstreams(row):
     #servers were contacted ", "
     #internal redirect " : "
     r = dict()
-    chains = {}
+#    chains = {}
+
+    def split_upstream(s):
+        return [x.split(' : ') for x in s.split(", ")]
 
     splitted = split_upstream(row['upstream_addr'])
     r['servers_contacted'] = len(splitted)
     r['internal_redirects'] = len([x for x in splitted if len(x) > 1])
-    chains['upstream_addr'] = list(itertools.chain.from_iterable(splitted))
+    upstream_addr = list(itertools.chain.from_iterable(splitted))
 
-    for k in (  'upstream_status',
-                'upstream_response_time',
-                'upstream_connect_time',
-                'upstream_header_time'
-             ):
-        chains[k] = list(itertools.chain.from_iterable(split_upstream(row[k])))
-    r['status'] = defaultdict(dd_int)
+    upstream_status = list(itertools.chain.from_iterable(split_upstream(row['upstream_status'])))
+    upstream_response_time = \
+        list(itertools.chain.from_iterable(split_upstream(row['upstream_response_time'])))
+    upstream_header_time = \
+        list(itertools.chain.from_iterable(split_upstream(row['upstream_header_time'])))
+    upstream_connect_time = \
+        list(itertools.chain.from_iterable(split_upstream(row['upstream_connect_time'])))
+    r['status'] = dict()
     r['response_time'] = defaultdict(float)
     r['connect_time'] = defaultdict(float)
     r['header_time'] = defaultdict(float)
     r['servers'] = []
-    for item in zip(chains['upstream_addr'],
-                    chains['upstream_status'],
-                    chains['upstream_response_time'],
-                    chains['upstream_connect_time'],
-                    chains['upstream_header_time']
+    for item in zip(upstream_addr,
+                    upstream_status,
+                    upstream_response_time,
+                    upstream_connect_time,
+                    upstream_header_time
                    ):
         k = item[0]
         r['servers'].append(k)
-        r['status'][k][item[1]] += 1
+        if k not in r['status']:
+            r['status'][k] = dict()
+        if item[1] in r['status'][k]:
+            r['status'][k][item[1]] += 1
+        else:
+            r['status'][k][item[1]] = 1
         r['response_time'][k] += float(item[2])
         r['connect_time'][k] += float(item[3])
         r['header_time'][k] += float(item[4])
     return r
-    #print(r)
-    #print("\n")
 
-def parsefile(pygtail, maxlines = 1000):
+
+def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
+              unordereddelay=2):
+    # lines are logged when request ends, which means they can be unordered
+    if status['last_msec']:
+        ignore_before = status['last_msec'] - bucket_secs * unordereddelay
+    else:
+        ignore_before = 0
+    max_msec = 0
     storage = defaultdict(list)
     for line in pygtail:
         try:
             items = line.rstrip('\r\n').split('|')
-            for index, item in enumerate(items):
-                if item == '-':
-                    items[index] = None
-            row = dict(zip(fieldnames, items))
-            for k in ['status', 'bytes_sent', 'request_length']:
-                if row[k] is not None:
-                    row[k] = int(row[k])
-            for k in ['gzip_ratio', 'request_time']:
-                if row[k] is not None:
-                    row[k] = float(row[k])
-            if row['upstream_addr'] is not None:
-                row['upstreams'] = parse_upstreams(row)
-            else:
-                row['upstreams'] = None
-            d = datetime.datetime.utcfromtimestamp(
-                float(row['msec'])
-            )
-            minute = d.minute + d.hour * 100 + d.day * 100**2 + d.month * 100**3 + d.year * 100**4
+            row = dict()
+            row['msec'] = float(items[pos_msec])
+            if row['msec'] <= ignore_before:
+                # skip unordered & old entries
+                continue
+            if row['msec'] > max_msec:
+                max_msec = row['msec']
+            bucket = int(math.ceil(float(row['msec'])/bucket_secs))
 
-            del row['msec']
-            del row['version']
-            del row['upstream_addr']
-            del row['upstream_status']
-            del row['upstream_response_time']
-            del row['upstream_connect_time']
-            del row['upstream_header_time']
+            row['vhost'] = items[pos_vhost]
+            row['protocol'] = items[pos_protocol]
+            row['loctag'] = items[pos_loctag]
 
-            storage[minute].append(row)
+            row['status'] = int(items[pos_status])
+            row['bytes_sent'] = int(items[pos_bytes_sent])
+            row['request_length'] = int(items[pos_request_length])
+
+            if items[pos_gzip_ratio] != '-':
+                row['gzip_ratio'] = float(items[pos_gzip_ratio])
+            if items[pos_request_time] != '-':
+                row['request_time'] = float(items[pos_request_time])
+
+            if items[pos_upstream_addr] != '-':
+                row['upstreams'] = parse_upstreams({
+                'upstream_addr': items[pos_upstream_addr],
+                'upstream_status': items[pos_upstream_status],
+                'upstream_response_time': items[pos_upstream_response_time],
+                'upstream_connect_time': items[pos_upstream_connect_time],
+                'upstream_header_time': items[pos_upstream_header_time],
+                })
+
+            storage[bucket].append(row)
         except ValueError as e:
             print(e, line)
+            print(row)
+            raise
         maxlines -= 1
         if maxlines == 0:
             break
     pygtail._update_offset_file()
-    return storage
+    return (storage, max_msec)
 
+#@profile
+def parse_storage(storage, status):
+    for k in storage:
+        print("storage", bucket2time(k, status), len(storage[k]))
 
-def parse_storage(storage, previous_leftover = None):
-    leftover = dict()
+    if status['leftover'] is not None:
+        previous_leftover = status['leftover']
+        for k in previous_leftover:
+            print ("Previous leftover bucket: %s %d" % (bucket2time(k, status), len(previous_leftover[k])))
+            if k in storage:
+                storage[k][0:0] = previous_leftover[k]
+            else:
+                storage[k] = previous_leftover[k]
+    for k in storage:
+        print("storage+leftover", bucket2time(k, status), len(storage[k]))
+
+    leftover = defaultdict(list)
+    n_buckets = len(storage.keys())
+    print("Storage n_buckets: %d" % n_buckets)
+    if not n_buckets:
+        return (dict(), leftover)
+    if n_buckets <= status['unordereddelay']:
+        return (dict(), storage)
+
+    n = status['unordereddelay']
+    while n > 0:
+        last_bucket = max(storage.keys())
+        leftover[last_bucket] = list(storage[last_bucket])
+        del storage[last_bucket]
+        n -= 1
+
+    for k in leftover:
+        print ("Leftover bucket: %s %d" % (bucket2time(k, status), len(leftover[k])))
+
+    print("Storage %s -> %s" % (bucket2time(min(storage.keys()), status),
+                                bucket2time(max(storage.keys()), status)))
+    return (calculate_full_buckets(storage, status), leftover)
+
+#@profile
+def calculate_full_buckets(storage, status):
     mbs = dict()
     mbs['hits'] = defaultdict(int)
     mbs['status'] = defaultdict(int)
@@ -180,45 +246,8 @@ def parse_storage(storage, previous_leftover = None):
     mbs['upstreams_connect_time_mean'] = defaultdict(float)
     mbs['upstreams_header_time_mean'] = defaultdict(float)
 
-    def statmins(sto, name):
-        first = int(min(sto.keys()))
-        last = int(max(sto.keys()))
-        length = len(sto.keys())
-        return "%s first=%d last=%d len=%d" % (name, first, last, length)
-
-    skip_firstminute = True
-    if previous_leftover is not None:
-        skip_firstminute = False
-        print(statmins(previous_leftover, "leftover"))
-
-        for k in previous_leftover.keys():
-            if k in storage.keys():
-                lenstorage_before = len(storage[k])
-                storage[k] += previous_leftover[k]
-                lenstorage_after = len(storage[k])
-                print("Appending %d (%d->%d) elems from previous leftover, minute=%s" %
-                      (len(previous_leftover[k]), lenstorage_before,
-                       lenstorage_after, k))
-            else:
-                storage[k] = previous_leftover[k]
-                print("Adding %d elems from previous leftover, minute=%s" %
-                  (len(previous_leftover[k]), k))
-            del previous_leftover[k]
-        assert(not previous_leftover)
-
-    print(statmins(storage, "current"))
-
-    last_minute = max(storage.keys())
-    first_minute = min(storage.keys())
-
-    if skip_firstminute:
-        print("Skipping first perhaps incomplete minute %s" % first_minute) # skip first incomplete minute
-        del storage[first_minute]
-
-    leftover[last_minute] = storage[last_minute]
-
-#print(storage)
     for k in sorted(storage.keys()):
+        print("bucket=%d len=%d" % (k, len(storage[k])))
         for r in storage[k]:
 #    mbs['hits']:
 #        tags: vhost, protocol, loc
@@ -246,12 +275,12 @@ def parse_storage(storage, previous_leftover = None):
 #        tags: vhost, protocol, loc
 #        value: count
             tags = (k, r['vhost'], r['protocol'], r['loctag'])
-            mbs['gzip_count'][tags] += (r['gzip_ratio'] is not None)
+            mbs['gzip_count'][tags] += ('gzip_ratio' in r)
 
 #    mbs['gzip_ratio']:
 #        tags: vhost, protocol, loc
 #        value: sum of gzip ratio / number of gzipped requests
-            if r['gzip_ratio'] is not None:
+            if 'gzip_ratio' in r:
                 tags = (k, r['vhost'], r['protocol'], r['loctag'])
                 mbs['_gzip_ratio_premean'][tags] += r['gzip_ratio']
 
@@ -272,7 +301,7 @@ def parse_storage(storage, previous_leftover = None):
 
 ##### upstreams
 
-            if r['upstreams'] is not None:
+            if 'upstreams' in r:
 
 #    mbs['upstreams_hits']:
 #        tags: vhost, protocol, loc, upstream
@@ -282,11 +311,36 @@ def parse_storage(storage, previous_leftover = None):
                     tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
                     mbs['upstreams_hits'][tags] += 1
 
+#    mbs['upstreams_response_time']:
+#        tags: vhost, protocol, loc, upstream
+#        value: sum of response_time / hits
+
+               # for upstream in r['upstreams']['servers']:
+              #      tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
+                    mbs['_upstreams_response_time_premean'][tags] += r['upstreams']['response_time'][upstream]
+
+#
+#    mbs['upstreams_connect_time']:
+#        tags: vhost, protocol, loc, upstream
+#        value: sum of connect_time / hits
+#
+              #  for upstream in r['upstreams']['servers']:
+               #     tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
+                    mbs['_upstreams_connect_time_premean'][tags] += r['upstreams']['connect_time'][upstream]
+
+
+#    mbs['upstreams_header_time']:
+#        tags: vhost, protocol, loc, upstream
+#        value: sum of header_time / hits
+              #  for upstream in r['upstreams']['servers']:
+               #     tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
+                    mbs['_upstreams_header_time_premean'][tags] += r['upstreams']['header_time'][upstream]
+
 
 #    mbs['upstreams_status']:
 #        tags: vhost, protocol, loc, upstream, status
 #        value: count
-                for upstream in r['upstreams']['servers']:
+                #for upstream in r['upstreams']['servers']:
                     for status in r['upstreams']['status'][upstream]:
                         tags = (k, r['vhost'], r['protocol'], r['loctag'],
                                 upstream, status)
@@ -317,31 +371,6 @@ def parse_storage(storage, previous_leftover = None):
                 mbs['upstreams_servers'][tags] += len(r['upstreams']['servers'])
 
 
-#    mbs['upstreams_response_time']:
-#        tags: vhost, protocol, loc, upstream
-#        value: sum of response_time / hits
-
-                for upstream in r['upstreams']['servers']:
-                    tags = (k, r['vhost'], r['protocol'], r['loctag'],
-                                upstream)
-                    mbs['_upstreams_response_time_premean'][tags] += r['upstreams']['response_time'][upstream]
-
-#
-#    mbs['upstreams_connect_time']:
-#        tags: vhost, protocol, loc, upstream
-#        value: sum of connect_time / hits
-#
-                for upstream in r['upstreams']['servers']:
-                    tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
-                    mbs['_upstreams_connect_time_premean'][tags] += r['upstreams']['connect_time'][upstream]
-
-
-#    mbs['upstreams_header_time']:
-#        tags: vhost, protocol, loc, upstream
-#        value: sum of header_time / hits
-                for upstream in r['upstreams']['servers']:
-                    tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
-                    mbs['_upstreams_header_time_premean'][tags] += r['upstreams']['header_time'][upstream]
 
 
 ###### calculations of means
@@ -381,11 +410,7 @@ def parse_storage(storage, previous_leftover = None):
                     mbs['gzip_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
                 else:
                     mbs['gzip_percent'][k] = 0.0
-
-    for k in leftover.keys():
-        print("%d %d" % (k, len(leftover[k])))
-    print("Leftover = %d" % (len(leftover)))
-    return (mbs, leftover)
+    return mbs
 
 def save_obj(obj, filepath):
     with gzip.GzipFile(filepath, 'wb') as f:
@@ -395,34 +420,32 @@ def load_obj(filepath):
     with gzip.GzipFile(filepath, 'rb') as f:
         return pickle.load(f)
 
+def bucket2time(bucket, status):
+    d = datetime.datetime.utcfromtimestamp(
+            bucket*status['bucket_secs']
+    )
+    return d.isoformat() + 'Z'
 
-def mbs2influx(mbs, host='x', logname='y', datacenter = ''):
+def mbs2influx(mbs, status):
     extra_tags = dict()
     points = []
     for measurement, tagnames in mbs_tags.items():
-#        print(tagnames)
+        if not measurement in mbs:
+            continue
         for tags, value in mbs[measurement].items():
-#            print(tags)
             influxtags = dict(zip(tagnames, tags[1:]))
             for k, v in influxtags.items():
-                if v is None:
-                    influxtags[k] = 'None'
                 if k == 'protocol':
                     if v == 's':
                         influxtags[k] = 'https'
                     else:
                         influxtags[k] = 'http'
                 influxtags[k] = str(v)
-#            print(influxtags)
-            s = str(tags[0])
-            time = s[0:4]+'-'+s[4:6]+'-'+s[6:8]+'T'+s[8:10]+':'+s[10:12]+':59Z'
             fields = { 'value': value}
- #           print time
-#            print fields
             points.append({
                 "measurement": measurement,
                 "tags": influxtags,
-                "time": time,
+                "time": bucket2time(tags[0], status),
                 "fields": fields
             })
     return points
@@ -464,6 +487,7 @@ parser.add_argument('-l', '--logname', default='')
 parser.add_argument('-d', '--datacenter', default='')
 parser.add_argument('--deletedatabase', action='store_true', default=False)
 parser.add_argument('--locker', choices=('fcntl', 'portalocker'), default='fcntl')
+parser.add_argument('-u', '--unordereddelay', type=int, default=2)
 
 args = parser.parse_args()
 print(args)
@@ -529,13 +553,13 @@ statusdir = os.path.abspath(args.writestatusdir)
 sane_filename = re.sub(r'\W', '_', filename)
 basepath = os.path.join(statusdir, sane_filename)
 filepath_offset = basepath + '.offset'
-filepath_leftover =  basepath + '.leftover'
+filepath_status =  basepath + '.leftover'
 pid = os.getpid()
 fmt = "%s.%d.tmp"
 filepath_offset_tmp = fmt % (filepath_offset, pid)
-filepath_leftover_tmp =  fmt % (filepath_leftover, pid)
+filepath_status_tmp =  fmt % (filepath_status, pid)
 filepath_offset_old = filepath_offset + '.old'
-filepath_leftover_old =  filepath_leftover + '.old'
+filepath_status_old =  filepath_status + '.old'
 
 lock_file = basepath + '.lock'
 
@@ -557,8 +581,8 @@ def cleanup():
     except:
         pass
     try:
-        os.remove(filepath_leftover_tmp)
-        print("Removed %s" % filepath_leftover_tmp)
+        os.remove(filepath_status_tmp)
+        print("Removed %s" % filepath_status_tmp)
     except:
         pass
     end_locking(lockfile, lock_file)
@@ -571,16 +595,18 @@ def finalize():
         except:
             pass
         try:
-            os.unlink(filepath_leftover_old)
-            shutil.copy2(filepath_leftover, filepath_leftover_old)
+            os.unlink(filepath_status_old)
+            shutil.copy2(filepath_status, filepath_status_old)
         except:
             pass
         os.rename(filepath_offset_tmp, filepath_offset)
-        os.rename(filepath_leftover_tmp, filepath_leftover)
+        os.rename(filepath_status_tmp, filepath_status)
     except:
         cleanup()
         raise
 
+bucket_secs = 60
+unordereddelay = 2
 res = False
 try:
     influxdb = influxdb_client(deletedatabase=args.deletedatabase)
@@ -589,17 +615,22 @@ try:
         shutil.copy2(filepath_offset, filepath_offset_tmp)
     pygtail = Pygtail(filename, offset_file=filepath_offset_tmp)
 
-    storage = parsefile(pygtail, maxlines=args.maxlines)
     try:
-        previous_leftover = load_obj(filepath_leftover)
+        status = load_obj(filepath_status)
     except IOError:
-        previous_leftover = None
-    mbs, leftover = parse_storage(storage, previous_leftover)
-#print(leftover)
-#leftover = json.loads(json.dumps(leftover))
-    save_obj(leftover, filepath_leftover_tmp)
+        status = {
+            'last_msec': 0,
+            'leftover' : None
+        }
 
-    points = mbs2influx(mbs)
+    status['bucket_secs'] = bucket_secs
+    status['unordereddelay'] = unordereddelay
+    storage, max_msec = parsefile(pygtail, status, maxlines=args.maxlines)
+    mbs, leftover = parse_storage(storage, status)
+    status['leftover'] = leftover
+    status['last_msec'] = max_msec
+
+    points = mbs2influx(mbs, status)
     if points:
         tags = {
             'host': args.hostname,
@@ -609,6 +640,7 @@ try:
             tags['dc'] = args.datacenter
         influxdb_send(influxdb, points, tags)
 
+    save_obj(status, filepath_status_tmp)
 except:
     cleanup()
     raise
