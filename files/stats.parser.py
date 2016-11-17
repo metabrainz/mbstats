@@ -254,7 +254,7 @@ def calculate_full_buckets(storage, status):
     mbs['upstreams_connect_time_mean'] = defaultdict(float)
     mbs['upstreams_header_time_mean'] = defaultdict(float)
 
-    for k in sorted(storage.keys()):
+    for k in storage.keys():
         print("bucket=%d len=%d" % (k, len(storage[k])))
         for r in storage[k]:
 #    mbs['hits']:
