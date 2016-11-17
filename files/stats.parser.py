@@ -87,23 +87,27 @@ def parse_upstreams(row):
     #servers were contacted ", "
     #internal redirect " : "
     r = dict()
-#    chains = {}
-
-    def split_upstream(s):
-        return [x.split(' : ') for x in s.split(", ")]
-
-    splitted = split_upstream(row['upstream_addr'])
+    splitted = [x.split(' : ') for x in row['upstream_addr'].split(", ")]
     r['servers_contacted'] = len(splitted)
     r['internal_redirects'] = len([x for x in splitted if len(x) > 1])
     upstream_addr = list(itertools.chain.from_iterable(splitted))
 
-    upstream_status = list(itertools.chain.from_iterable(split_upstream(row['upstream_status'])))
+    upstream_status = list(itertools.chain.from_iterable([x.split(' : ') for x
+                                                          in
+                                                          row['upstream_status'].split(", ")]))
     upstream_response_time = \
-        list(itertools.chain.from_iterable(split_upstream(row['upstream_response_time'])))
+        list(itertools.chain.from_iterable([x.split(' : ') for x
+                                                          in
+                                                          row['upstream_response_time'].split(", ")]))
     upstream_header_time = \
-        list(itertools.chain.from_iterable(split_upstream(row['upstream_header_time'])))
+        list(itertools.chain.from_iterable([x.split(' : ') for x
+                                                          in
+                                                          row['upstream_header_time'].split(", ")]))
     upstream_connect_time = \
-        list(itertools.chain.from_iterable(split_upstream(row['upstream_connect_time'])))
+        list(itertools.chain.from_iterable([x.split(' : ') for x
+                                                          in
+                                                          row['upstream_connect_time'].split(", ")]))
+
     r['status'] = dict()
     r['response_time'] = defaultdict(float)
     r['connect_time'] = defaultdict(float)
@@ -117,6 +121,8 @@ def parse_upstreams(row):
                    ):
         k = item[0]
         r['servers'].append(k)
+# not using defauldict() here intentionally, because it requires lamba/function
+# and it breaks with pickle
         if k not in r['status']:
             r['status'][k] = dict()
         if item[1] in r['status'][k]:
