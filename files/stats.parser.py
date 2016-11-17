@@ -111,22 +111,15 @@ def parse_upstreams(row):
     #print(r)
     #print("\n")
 
-def parsefile(pygtail, maxlines = 1000, start=0):
+def parsefile(pygtail, maxlines = 1000):
     storage = defaultdict(list)
-    n = 0
     for line in pygtail:
-        n += 1
-        if n < start:
-            continue
         try:
             items = line.rstrip('\r\n').split('|')
             for index, item in enumerate(items):
                 if item == '-':
                     items[index] = None
             row = dict(zip(fieldnames, items))
- #           row['datetime'] = datetime.datetime.utcfromtimestamp(
- #               float(row['msec'])
- #           )
             for k in ['status', 'bytes_sent', 'request_length']:
                 if row[k] is not None:
                     row[k] = int(row[k])
@@ -137,11 +130,6 @@ def parsefile(pygtail, maxlines = 1000, start=0):
                 row['upstreams'] = parse_upstreams(row)
             else:
                 row['upstreams'] = None
-            #row = {k: v for k, v in row.items() if v != '-'}
-#            minute = int(row['datetime'].strftime('%Y%m%d%H%M'))
-#            YYYYMMDDHHMM
-#            1000 100000000
-#            d = row['datetime']
             d = datetime.datetime.utcfromtimestamp(
                 float(row['msec'])
             )
@@ -192,210 +180,207 @@ def parse_storage(storage, previous_leftover = None):
     mbs['upstreams_connect_time_mean'] = defaultdict(float)
     mbs['upstreams_header_time_mean'] = defaultdict(float)
 
-    last_minute = max(storage.keys())
-
     def statmins(sto, name):
         first = int(min(sto.keys()))
         last = int(max(sto.keys()))
         length = len(sto.keys())
         return "%s first=%d last=%d len=%d" % (name, first, last, length)
 
-    print(statmins(storage, "current"))
-
+    skip_firstminute = True
     if previous_leftover is not None:
+        skip_firstminute = False
         print(statmins(previous_leftover, "leftover"))
-        for k in storage.keys():
-            if k in previous_leftover.keys():
+
+        for k in previous_leftover.keys():
+            if k in storage.keys():
                 lenstorage_before = len(storage[k])
                 storage[k] += previous_leftover[k]
                 lenstorage_after = len(storage[k])
                 print("Appending %d (%d->%d) elems from previous leftover, minute=%s" %
                       (len(previous_leftover[k]), lenstorage_before,
                        lenstorage_after, k))
-                del previous_leftover[k]
-        for k in previous_leftover.keys():
-            storage[k] = previous_leftover[k]
-            print("Adding %d elems from previous leftover, minute=%s" %
+            else:
+                storage[k] = previous_leftover[k]
+                print("Adding %d elems from previous leftover, minute=%s" %
                   (len(previous_leftover[k]), k))
             del previous_leftover[k]
-        assert(not len(previous_leftover))
+        assert(not previous_leftover)
 
+    print(statmins(storage, "current"))
+
+    last_minute = max(storage.keys())
     first_minute = min(storage.keys())
-    skip_firstminute = (previous_leftover is None)
+
+    if skip_firstminute:
+        print("Skipping first perhaps incomplete minute %s" % first_minute) # skip first incomplete minute
+        del storage[first_minute]
+
+    leftover[last_minute] = storage[last_minute]
 
 #print(storage)
     for k in sorted(storage.keys()):
-        #print(k)
-        if k >= last_minute:
-            print("Store last minute for next run %s" % k)
-            leftover[k] = storage[k] # store for next run
-            continue
-        elif k == first_minute and skip_firstminute:
-            print("Skipping first perhaps incomplete minute %s" % k) # skip first incomplete minute
-            continue
-        else:
-            for r in storage[k]:
+        for r in storage[k]:
 #    mbs['hits']:
 #        tags: vhost, protocol, loc
 #        value: count
 #
-                tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                mbs['hits'][tags] += 1
+            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+            mbs['hits'][tags] += 1
 
 #    mbs['status']:
 #        tags: vhost, protocol, loc,  status
 #        value: count
 #
-                tags = (k, r['vhost'], r['protocol'], r['loctag'], r['status'])
-                mbs['status'][tags] += 1
+            tags = (k, r['vhost'], r['protocol'], r['loctag'], r['status'])
+            mbs['status'][tags] += 1
 
 #    mbs['bytes_sent']:
 #        tags: vhost, protocol, loc
 #        value: sum
 #
-                tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                mbs['bytes_sent'][tags] += r['bytes_sent']
+            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+            mbs['bytes_sent'][tags] += r['bytes_sent']
 
 
 #    mbs['gzip_count']:
 #        tags: vhost, protocol, loc
 #        value: count
-                tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                mbs['gzip_count'][tags] += (r['gzip_ratio'] is not None)
+            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+            mbs['gzip_count'][tags] += (r['gzip_ratio'] is not None)
 
 #    mbs['gzip_ratio']:
 #        tags: vhost, protocol, loc
 #        value: sum of gzip ratio / number of gzipped requests
-                if r['gzip_ratio'] is not None:
-                    tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                    mbs['_gzip_ratio_premean'][tags] += r['gzip_ratio']
+            if r['gzip_ratio'] is not None:
+                tags = (k, r['vhost'], r['protocol'], r['loctag'])
+                mbs['_gzip_ratio_premean'][tags] += r['gzip_ratio']
 
 #
 #    mbs['request_length']:
 #        tags: vhost, protocol, loc
 #        value: sum of request_length / hits
 #
-                tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                mbs['_request_length_premean'][tags] += r['request_length']
+            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+            mbs['_request_length_premean'][tags] += r['request_length']
 
 #    mbs['request_time']:
 #        tags: vhost, protocol, loc
 #        value: sum of request_time / hits
 #
-                tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                mbs['_request_time_premean'][tags] += r['request_time']
+            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+            mbs['_request_time_premean'][tags] += r['request_time']
 
 ##### upstreams
 
-                if r['upstreams'] is not None:
+            if r['upstreams'] is not None:
 
 #    mbs['upstreams_hits']:
 #        tags: vhost, protocol, loc, upstream
 #        value: count
 #
-                    for upstream in r['upstreams']['servers']:
-                        tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
-                        mbs['upstreams_hits'][tags] += 1
+                for upstream in r['upstreams']['servers']:
+                    tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
+                    mbs['upstreams_hits'][tags] += 1
 
 
 #    mbs['upstreams_status']:
 #        tags: vhost, protocol, loc, upstream, status
 #        value: count
-                    for upstream in r['upstreams']['servers']:
-                        for status in r['upstreams']['status'][upstream]:
-                            tags = (k, r['vhost'], r['protocol'], r['loctag'],
-                                    upstream, status)
-                            mbs['upstreams_status'][tags] += 1
+                for upstream in r['upstreams']['servers']:
+                    for status in r['upstreams']['status'][upstream]:
+                        tags = (k, r['vhost'], r['protocol'], r['loctag'],
+                                upstream, status)
+                        mbs['upstreams_status'][tags] += 1
 
 #
 #    mbs['upstreams_servers_contacted']:
 #        tags: vhost, protocol, loc
 #        value: sum of servers_contacted
 #
-                    tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                    mbs['upstreams_servers_contacted'][tags] += r['upstreams']['servers_contacted']
+                tags = (k, r['vhost'], r['protocol'], r['loctag'])
+                mbs['upstreams_servers_contacted'][tags] += r['upstreams']['servers_contacted']
 
 
 #    mbs['upstream_internal_redirects']:
 #        tags: vhost, protocol, loc
 #        value: sum of internal_redirects
 #
-                    tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                    mbs['upstreams_internal_redirects'][tags] += r['upstreams']['internal_redirects']
+                tags = (k, r['vhost'], r['protocol'], r['loctag'])
+                mbs['upstreams_internal_redirects'][tags] += r['upstreams']['internal_redirects']
 
 
 #    mbs['upstreams_servers_count']:
 #        tags: vhost, protocol, loc
 #        value: sum of len of servers
 #
-                    tags = (k, r['vhost'], r['protocol'], r['loctag'])
-                    mbs['upstreams_servers'][tags] += len(r['upstreams']['servers'])
+                tags = (k, r['vhost'], r['protocol'], r['loctag'])
+                mbs['upstreams_servers'][tags] += len(r['upstreams']['servers'])
 
 
 #    mbs['upstreams_response_time']:
 #        tags: vhost, protocol, loc, upstream
 #        value: sum of response_time / hits
 
-                    for upstream in r['upstreams']['servers']:
-                        tags = (k, r['vhost'], r['protocol'], r['loctag'],
-                                    upstream)
-                        mbs['_upstreams_response_time_premean'][tags] += r['upstreams']['response_time'][upstream]
+                for upstream in r['upstreams']['servers']:
+                    tags = (k, r['vhost'], r['protocol'], r['loctag'],
+                                upstream)
+                    mbs['_upstreams_response_time_premean'][tags] += r['upstreams']['response_time'][upstream]
 
 #
 #    mbs['upstreams_connect_time']:
 #        tags: vhost, protocol, loc, upstream
 #        value: sum of connect_time / hits
 #
-                    for upstream in r['upstreams']['servers']:
-                        tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
-                        mbs['_upstreams_connect_time_premean'][tags] += r['upstreams']['connect_time'][upstream]
+                for upstream in r['upstreams']['servers']:
+                    tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
+                    mbs['_upstreams_connect_time_premean'][tags] += r['upstreams']['connect_time'][upstream]
 
 
 #    mbs['upstreams_header_time']:
 #        tags: vhost, protocol, loc, upstream
 #        value: sum of header_time / hits
-                    for upstream in r['upstreams']['servers']:
-                        tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
-                        mbs['_upstreams_header_time_premean'][tags] += r['upstreams']['header_time'][upstream]
+                for upstream in r['upstreams']['servers']:
+                    tags = (k, r['vhost'], r['protocol'], r['loctag'], upstream)
+                    mbs['_upstreams_header_time_premean'][tags] += r['upstreams']['header_time'][upstream]
 
 
 ###### calculations of means
 
-            # gzip_ratio_mean
-            if mbs['gzip_count']:
-                for k, v in mbs['_gzip_ratio_premean'].items():
-                    mbs['gzip_ratio_mean'][k] = v / mbs['gzip_count'][k]
+        # gzip_ratio_mean
+        if mbs['gzip_count']:
+            for k, v in mbs['_gzip_ratio_premean'].items():
+                mbs['gzip_ratio_mean'][k] = v / mbs['gzip_count'][k]
 
-            if mbs['hits']:
-                # mbs['request_length_mean']
-                for k, v in mbs['_request_length_premean'].items():
-                    mbs['request_length_mean'][k] = v / mbs['hits'][k]
+        if mbs['hits']:
+            # mbs['request_length_mean']
+            for k, v in mbs['_request_length_premean'].items():
+                mbs['request_length_mean'][k] = v / mbs['hits'][k]
 
-                # mbs['request_time_mean']
-                for k, v in mbs['_request_time_premean'].items():
-                    mbs['request_time_mean'][k] = v / mbs['hits'][k]
+            # mbs['request_time_mean']
+            for k, v in mbs['_request_time_premean'].items():
+                mbs['request_time_mean'][k] = v / mbs['hits'][k]
 
-            if mbs['upstreams_hits']:
-                # mbs['upstreams_response_time_mean']
-                for k, v in mbs['_upstreams_response_time_premean'].items():
-                    mbs['upstreams_response_time_mean'][k] = v / mbs['upstreams_hits'][k]
+        if mbs['upstreams_hits']:
+            # mbs['upstreams_response_time_mean']
+            for k, v in mbs['_upstreams_response_time_premean'].items():
+                mbs['upstreams_response_time_mean'][k] = v / mbs['upstreams_hits'][k]
 
-                # mbs['upstreams_connect_time_mean']
-                for k, v in mbs['_upstreams_connect_time_premean'].items():
-                    mbs['upstreams_connect_time_mean'][k] = v / mbs['upstreams_hits'][k]
+            # mbs['upstreams_connect_time_mean']
+            for k, v in mbs['_upstreams_connect_time_premean'].items():
+                mbs['upstreams_connect_time_mean'][k] = v / mbs['upstreams_hits'][k]
 
-                # mbs['upstreams_header_time_mean']
-                for k, v in mbs['_upstreams_header_time_premean'].items():
-                    mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
+            # mbs['upstreams_header_time_mean']
+            for k, v in mbs['_upstreams_header_time_premean'].items():
+                mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
 
 ###### calculations of percentage
 
-            if mbs['hits']:
-                for k, v in mbs['hits'].items():
-                    if mbs['gzip_count'] and v:
-                        mbs['gzip_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
-                    else:
-                        mbs['gzip_percent'][k] = 0.0
+        if mbs['hits']:
+            for k, v in mbs['hits'].items():
+                if mbs['gzip_count'] and v:
+                    mbs['gzip_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
+                else:
+                    mbs['gzip_percent'][k] = 0.0
 
     for k in leftover.keys():
         print("%d %d" % (k, len(leftover[k])))
@@ -477,10 +462,66 @@ parser.add_argument('-w', '--writestatusdir', default='.')
 parser.add_argument('-H', '--hostname', default=platform.node())
 parser.add_argument('-l', '--logname', default='')
 parser.add_argument('-d', '--datacenter', default='')
-parser.add_argument('--deletedatabase', default=False)
+parser.add_argument('--deletedatabase', action='store_true', default=False)
+parser.add_argument('--locker', choices=('fcntl', 'portalocker'), default='fcntl')
 
 args = parser.parse_args()
 print(args)
+if args.locker == 'portalocker':
+    import portalocker
+    lock_exception_klass = portalocker.LockException
+else:
+    import fcntl
+    lock_exception_klass = IOError
+
+class LockingError(Exception):
+    """ Exception raised for errors creating or destroying lockfiles. """
+    pass
+
+
+def start_locking(lockfile_name):
+    """ Acquire a lock via a provided lockfile filename. """
+    if os.path.exists(lockfile_name):
+        raise LockingError("Lock file (%s) already exists." % lockfile_name)
+
+    f = open(lockfile_name, 'w')
+
+    try:
+        if args.locker == 'portalocker':
+            portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
+        else:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        f.write("%s" % os.getpid())
+    except lock_exception_klass:
+        # Would be better to also check the pid in the lock file and remove the
+        # lock file if that pid no longer exists in the process table.
+        raise LockingError("Cannot acquire logster lock (%s)" % lockfile_name)
+
+    #logger.debug("Locking successful")
+    return f
+
+
+def end_locking(lockfile_fd, lockfile_name):
+    """ Release a lock via a provided file descriptor. """
+    try:
+        if args.locker == 'portalocker':
+            portalocker.unlock(lockfile_fd) # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
+        else:
+            if platform.system() == "SunOS": # GH issue #17
+                fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
+            else:
+                fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
+    except lock_exception_klass:
+        raise LockingError("Cannot release logster lock (%s)" % lockfile_name)
+
+    try:
+        lockfile_fd.close()
+        os.unlink(lockfile_name)
+    except OSError as e:
+        raise LockingError("Cannot unlink %s" % lockfile_name)
+
+    #logger.debug("Unlocking successful")
+    return
 
 filename = args.file
 
@@ -496,8 +537,18 @@ filepath_leftover_tmp =  fmt % (filepath_leftover, pid)
 filepath_offset_old = filepath_offset + '.old'
 filepath_leftover_old =  filepath_leftover + '.old'
 
-offset_written = False
-leftover_written = False
+lock_file = basepath + '.lock'
+
+# Check for lock file so we don't run multiple copies of the same parser
+# simultaneuosly. This will happen if the log parsing takes more time than
+# the cron period.
+try:
+    lockfile = start_locking(lock_file)
+except LockingError as e:
+    #logger.warning(str(e))
+    print("Locking error: ", str(e))
+    sys.exit(1)
+
 
 def cleanup():
     try:
@@ -510,6 +561,7 @@ def cleanup():
         print("Removed %s" % filepath_leftover_tmp)
     except:
         pass
+    end_locking(lockfile, lock_file)
 
 def finalize():
     try:
@@ -562,3 +614,8 @@ except:
     raise
 else:
     finalize()
+
+try:
+    end_locking(lockfile, lock_file)
+except Exception as e:
+    pass
