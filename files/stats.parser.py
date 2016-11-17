@@ -489,7 +489,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-f', '--file')
 parser.add_argument('-s', '--start', type=int)
 parser.add_argument('-m', '--maxlines', default=0, type=int)
-parser.add_argument('-w', '--writestatusdir', default='.')
+parser.add_argument('-w', '--workdir', default='.')
 parser.add_argument('-H', '--hostname', default=platform.node())
 parser.add_argument('-l', '--logname', default='')
 parser.add_argument('-d', '--datacenter', default='')
@@ -555,27 +555,56 @@ def end_locking(lockfile_fd, lockfile_name):
     #logger.debug("Unlocking successful")
     return
 
+class SafeFile(object):
+    def __init__(self, workdir, identifier, suffix = ''):
+        self.identifier = identifier
+        self.suffix = suffix
+        self.sane_filename = re.sub(r'\W', '_', self.identifier + self.suffix)
+        self.workdir = workdir
+        self.main = os.path.join(self.workdir, self.sane_filename)
+        self.tmp = "%s.%d.tmp" % (self.main, os.getpid())
+        self.old = "%s.old" % (self.main)
+        self.lock = "%s.lock" % (self.main)
+
+    def suffixed(self, suffix):
+        return SafeFile(self.workdir, self.identifier, suffix='.' + suffix)
+
+    def tmp2main(self):
+        try:
+            os.unlink(self.old)
+            shutil.copy2(self.main, self.old)
+        except:
+            pass
+        os.rename(self.tmp, self.main)
+
+    def tmpclean(self):
+        try:
+            os.remove(self.tmp)
+            print("Removed %s" % self.tmp)
+        except:
+            pass
+
+    def main2tmp(self):
+        if os.path.isfile(self.main):
+            shutil.copy2(self.main, self.tmp)
+
+
 filename = args.file
 
-statusdir = os.path.abspath(args.writestatusdir)
-sane_filename = re.sub(r'\W', '_', filename)
-basepath = os.path.join(statusdir, sane_filename)
-filepath_offset = basepath + '.offset'
-filepath_status =  basepath + '.leftover'
-pid = os.getpid()
-fmt = "%s.%d.tmp"
-filepath_offset_tmp = fmt % (filepath_offset, pid)
-filepath_status_tmp =  fmt % (filepath_status, pid)
-filepath_offset_old = filepath_offset + '.old'
-filepath_status_old =  filepath_status + '.old'
+workdir = os.path.abspath(args.workdir)
+safefile = SafeFile(workdir, filename)
+files = {
+    'offset':   safefile.suffixed('offset'),
+    'leftover': safefile.suffixed('leftover'),
+    'lock':     safefile.suffixed('lock')
+}
 
-lock_file = basepath + '.lock'
 
 # Check for lock file so we don't run multiple copies of the same parser
 # simultaneuosly. This will happen if the log parsing takes more time than
 # the cron period.
 try:
-    lockfile = start_locking(lock_file)
+    lockfile = start_locking(files['lock'].main)
 except LockingError as e:
     #logger.warning(str(e))
     print("Locking error: ", str(e))
@@ -583,32 +612,14 @@ except LockingError as e:
 
 
 def cleanup():
-    try:
-        os.remove(filepath_offset_tmp)
-        print("Removed %s" % filepath_offset_tmp)
-    except:
-        pass
-    try:
-        os.remove(filepath_status_tmp)
-        print("Removed %s" % filepath_status_tmp)
-    except:
-        pass
-    end_locking(lockfile, lock_file)
+    files['offset'].tmpclean()
+    files['leftover'].tmpclean()
+    end_locking(lockfile, files['lock'].main)
 
 def finalize():
     try:
-        try:
-            os.unlink(filepath_offset_old)
-            shutil.copy2(filepath_offset, filepath_offset_old)
-        except:
-            pass
-        try:
-            os.unlink(filepath_status_old)
-            shutil.copy2(filepath_status, filepath_status_old)
-        except:
-            pass
-        os.rename(filepath_offset_tmp, filepath_offset)
-        os.rename(filepath_status_tmp, filepath_status)
+        files['offset'].tmp2main()
+        files['leftover'].tmp2main()
     except:
         cleanup()
         raise
@@ -619,12 +630,12 @@ res = False
 try:
     influxdb = influxdb_client(deletedatabase=args.deletedatabase)
 
-    if os.path.isfile(filepath_offset):
-        shutil.copy2(filepath_offset, filepath_offset_tmp)
-    pygtail = Pygtail(filename, offset_file=filepath_offset_tmp)
+    files['offset'].main2tmp()
+
+    pygtail = Pygtail(filename, offset_file=files['offset'].tmp)
 
     try:
-        status = load_obj(filepath_status)
+        status = load_obj(files['leftover'].main)
     except IOError:
         status = {
             'last_msec': 0,
@@ -648,14 +659,14 @@ try:
             tags['dc'] = args.datacenter
         influxdb_send(influxdb, points, tags)
 
-    save_obj(status, filepath_status_tmp)
+    save_obj(status, files['leftover'].tmp)
 except:
     cleanup()
     raise
 else:
     finalize()
-
-try:
-    end_locking(lockfile, lock_file)
-except Exception as e:
-    pass
+finally:
+    try:
+        end_locking(lockfile, files['lock'].main)
+    except Exception as e:
+        pass
