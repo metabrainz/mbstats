@@ -370,16 +370,12 @@ def calculate_full_buckets(storage, status):
                 tags = (k, r['vhost'], r['protocol'], r['loctag'])
                 mbs['upstreams_internal_redirects'][tags] += r['upstreams']['internal_redirects']
 
-
 #    mbs['upstreams_servers_count']:
 #        tags: vhost, protocol, loc
 #        value: sum of len of servers
 #
                 tags = (k, r['vhost'], r['protocol'], r['loctag'])
                 mbs['upstreams_servers'][tags] += len(r['upstreams']['servers'])
-
-
-
 
 ###### calculations of means
 
@@ -420,6 +416,7 @@ def calculate_full_buckets(storage, status):
                     mbs['gzip_percent'][k] = 0.0
     return mbs
 
+
 def save_obj(obj, filepath):
     with gzip.GzipFile(filepath, 'wb') as f:
         pickle.dump(obj, f)
@@ -427,6 +424,7 @@ def save_obj(obj, filepath):
 def load_obj(filepath):
     with gzip.GzipFile(filepath, 'rb') as f:
         return pickle.load(f)
+
 
 def bucket2time(bucket, status):
     d = datetime.datetime.utcfromtimestamp(
@@ -458,7 +456,7 @@ def mbs2influx(mbs, status):
             })
     return points
 
-
+# TODO: influxdb params
 def influxdb_client(host='localhost',
                     port=8086,
                     username='root',
