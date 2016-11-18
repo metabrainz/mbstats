@@ -143,6 +143,7 @@ def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
     else:
         ignore_before = 0
     max_msec = 0
+    skipped = 0
     storage = defaultdict(list)
     for line in pygtail:
         try:
@@ -150,6 +151,7 @@ def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
             msec = float(items[pos_msec])
             if msec <= ignore_before:
                 # skip unordered & old entries
+                skipped += 1
                 continue
             if msec > max_msec:
                 max_msec = msec
@@ -186,6 +188,8 @@ def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
         maxlines -= 1
         if maxlines == 0:
             break
+    if skipped:
+        print("Skipped %d unordered lines" % skipped)
     pygtail._update_offset_file()
     return (storage, max_msec)
 
