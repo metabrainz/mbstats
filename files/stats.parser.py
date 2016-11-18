@@ -135,7 +135,7 @@ def parse_upstreams(row):
     return r
 
 
-def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
+def parsefile(tailer, status, maxlines = 1000, bucket_secs=60,
               lookbackfactor=2):
     mbs = mbsdict()
     # lines are logged when request ends, which means they can be unordered
@@ -153,7 +153,7 @@ def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
             storage[bucket] = previous_leftover[bucket]
             print ("Previous leftover bucket: %s %d" % (bucket2time(bucket, status), len(previous_leftover[bucket])))
 
-    for line in pygtail:
+    for line in tailer:
         try:
             items = line.rstrip('\r\n').split('|')
             msec = float(items[pos_msec])
@@ -202,7 +202,7 @@ def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
             break
     if skipped:
         print("Skipped %d unordered lines" % skipped)
-    pygtail._update_offset_file()
+    tailer._update_offset_file()
     last_bucket = bucket
     for bucket in storage:
          print ("Unprocessed bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
