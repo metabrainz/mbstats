@@ -57,6 +57,8 @@ import gzip
 import itertools
 import json
 import math
+import logging.handlers
+import logging.config
 import os.path
 import platform
 import re
@@ -198,7 +200,7 @@ def parsefile(tailer, status, options):
         previous_leftover = status['leftover']
         for bucket in previous_leftover:
             storage[bucket] = previous_leftover[bucket]
-            print ("Previous leftover bucket: %s %d" % (bucket2time(bucket, status), len(previous_leftover[bucket])))
+            logger.info("Previous leftover bucket: %s %d" % (bucket2time(bucket, status), len(previous_leftover[bucket])))
 
     for line in tailer:
         try:
@@ -241,20 +243,20 @@ def parsefile(tailer, status, options):
             if ready_to_process in storage:
                 process_bucket(ready_to_process, storage, status, mbs)
         except ValueError as e:
-            print(e, line)
-            print(row)
+            logger.error(str(e), line)
+            logger.error(row)
             raise
         max_lines -= 1
         if max_lines == 0:
             break
     if skipped:
-        print("Skipped %d unordered lines" % skipped)
+        logger.info("Skipped %d unordered lines" % skipped)
     tailer._update_offset_file()
     last_bucket = bucket
     for bucket in storage:
-         print ("Unprocessed bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
+         logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
          if bucket < last_bucket - lookback_factor:
-            print ("Removing old bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
+            logger.info("Removing old bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
             del storage[bucket]
     mbspostprocess(mbs)
     return (mbs, storage, last_msec)
@@ -288,7 +290,7 @@ def mbsdict():
 
 
 def process_bucket(bucket, storage, status, mbs):
-    print ("Processing bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
+    logger.info("Processing bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
 
     for row in storage[bucket]:
 #    mbs['hits']:
@@ -457,9 +459,11 @@ def mbspostprocess(mbs):
 def save_obj(obj, filepath):
     with open(filepath, 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+        logger.debug("save_obj(): saved to %r" % filepath)
 
 def load_obj(filepath):
     with open(filepath, 'rb') as f:
+        logger.debug("load_obj(): loading from %r" % filepath)
         return pickle.load(f)
 
 
@@ -504,16 +508,137 @@ def influxdb_client(options):
                             timeout=options.influx_timeout)
     if options.influx_drop_database:
         client.drop_database(database)
+
     client.create_database(database)
     return client
 
-def influxdb_send(client, points, tags, batch_size=500):
+def influxdb_send(client, points, tags, options):
     npoints = len(points)
     if npoints:
-        print("Sending %d points" % npoints)
-        print(points[0])
-        return client.write_points(points, tags=tags, time_precision='m', batch_size=batch_size)
+        logger.info("Sending %d points" % npoints)
+        logger.debug(points[0])
+        if options.dry_run:
+            logger.debug("Dry run")
+            print(json.dumps(points, indent=4, sort_keys=True))
+            return True
+        return client.write_points(points, tags=tags, time_precision='m',
+                                   batch_size=options.influx_batch_size)
     return True
+
+class LockingError(Exception):
+    """ Exception raised for errors creating or destroying lockfiles. """
+    pass
+
+
+def start_locking(lockfile_name):
+    """ Acquire a lock via a provided lockfile filename. """
+    if os.path.exists(lockfile_name):
+        raise LockingError("Lock file (%s) already exists." % lockfile_name)
+
+    f = open(lockfile_name, 'w')
+
+    try:
+        if options.locker == 'portalocker':
+            portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
+        else:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        f.write("%s" % os.getpid())
+    except lock_exception_klass:
+        # Would be better to also check the pid in the lock file and remove the
+        # lock file if that pid no longer exists in the process table.
+        raise LockingError("Cannot acquire logster lock (%s)" % lockfile_name)
+
+    logger.debug("Locking successful")
+    return f
+
+
+def end_locking(lockfile_fd, lockfile_name):
+    """ Release a lock via a provided file descriptor. """
+    try:
+        if options.locker == 'portalocker':
+            portalocker.unlock(lockfile_fd) # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
+        else:
+            if platform.system() == "SunOS": # GH issue #17
+                fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
+            else:
+                fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
+    except lock_exception_klass:
+        raise LockingError("Cannot release logster lock (%s)" % lockfile_name)
+
+    try:
+        lockfile_fd.close()
+        os.unlink(lockfile_name)
+    except OSError as e:
+        raise LockingError("Cannot unlink %s" % lockfile_name)
+
+    logger.debug("Unlocking successful")
+    return
+
+class SafeFile(object):
+    def __init__(self, workdir, identifier, suffix = ''):
+        self.identifier = identifier
+        self.suffix = suffix
+        self.sane_filename = re.sub(r'\W', '_', self.identifier + self.suffix)
+        self.workdir = workdir
+        self.main = os.path.join(self.workdir, self.sane_filename)
+        self.tmp = "%s.%d.tmp" % (self.main, os.getpid())
+        self.old = "%s.old" % (self.main)
+        self.lock = "%s.lock" % (self.main)
+
+    def suffixed(self, suffix):
+        return SafeFile(self.workdir, self.identifier, suffix='.' + suffix)
+
+    def main2old(self):
+        try:
+            if os.path.isfile(self.old):
+                os.unlink(self.old)
+            shutil.copy2(self.main, self.old)
+            logger.debug("main2old(): Copied %r to %r" % (self.main, self.old))
+        except Exception as e:
+            logger.error("main2old() failed: %r -> %r %s" % (self.main, self.old,
+                                                          str(e)))
+            pass
+
+    def tmp2main(self):
+        try:
+            self.main2old()
+            os.rename(self.tmp, self.main)
+            logger.debug("tmp2main(): Renamed %r to %r" % (self.tmp, self.main))
+        except Exception as e:
+            logger.error("tmp2main(): failed: %r -> %r %s" % (self.tmp, self.main,
+                                                          str(e)))
+            raise
+
+    def tmpclean(self):
+        if os.path.isfile(self.tmp):
+            try:
+                os.remove(self.tmp)
+                logger.debug("tmpclean(): Removed %r" % self.tmp)
+            except Exception as e:
+                logger.error("tmpclean(): failed: %r %s" % (self.tmp, str(e)))
+                pass
+
+    def main2tmp(self):
+        if os.path.isfile(self.main):
+            try:
+                shutil.copy2(self.main, self.tmp)
+                logger.debug("main2tmp(): Copied %r to %r" % (self.main, self.tmp))
+            except Exception as e:
+                logger.error("main2tmp(): failed: %r -> %r %s" % (self.main,
+                                                                 self.tmp,
+                                                                 str(e)))
+                raise
+
+    def remove_main(self):
+        self.main2old()
+        self.tmpclean()
+        try:
+            os.remove(self.main)
+            logger.debug("remove_main(): Removed %r" % (self.main))
+        except Exception as e:
+            logger.error("remove_main(): failed: %r %s" % (self.main, str(e)))
+            pass
+
 
 
 
@@ -574,6 +699,12 @@ common.add_argument('-n', '--name', default='',
                    help="string to use as 'name' tag")
 common.add_argument('-d', '--datacenter', default='',
                    help="string to use as 'dc' tag")
+common.add_argument('-l', '--log-dir', action='store', default='',
+                    help='Where to store the stats.parser logfile.  Default location is workdir')
+common.add_argument('--log-conf', action='store', default=None,
+                    help='Logging configuration file. None by default')
+common.add_argument('--dry-run', '-y', action='store_true', default=False,
+                    help='Parse the log file but send stats to standard output.')
 
 influx = parser.add_argument_group('influxdb arguments')
 influx.add_argument('--influx-host', default='localhost',
@@ -588,8 +719,12 @@ influx.add_argument('--influx-database', default='mbstats',
                    help="influxdb database")
 influx.add_argument('--influx-timeout', default=40, type=int,
                    help="influxdb timeout")
+influx.add_argument('--influx-batch-size', default=500, type=int,
+                   help="number of points to send per batch")
 
 expert = parser.add_argument_group('expert arguments')
+expert.add_argument('-D', '--debug', action='store_true', default=False,
+                    help="Enable debug mode")
 expert.add_argument('--influx-drop-database', action='store_true', default=False,
                    help="drop existing InfluxDB database, use with care")
 expert.add_argument('--locker', choices=('fcntl', 'portalocker'),
@@ -606,7 +741,32 @@ expert.add_argument('--bucket-duration', type=int, default=60,
 
 
 options = parser.parse_args()
-print(options)
+#print(options)
+
+log_dir = options.log_dir
+if not log_dir:
+    log_dir = options.workdir
+
+# Logging infrastructure for use throughout the script.
+# Uses appending log file, rotated at 100 MB, keeping 5.
+if (not os.path.isdir(log_dir)):
+    os.mkdir(log_dir)
+logger = logging.getLogger('stats.parser')
+formatter = logging.Formatter('%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
+hdlr = logging.handlers.RotatingFileHandler('%s/stats.parser.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
+hdlr.setFormatter(formatter)
+logger.addHandler(hdlr)
+logger.setLevel(logging.INFO)
+
+if (options.log_conf):
+     logging.config.fileConfig(options.log_conf)
+
+if (options.debug):
+    logger.setLevel(logging.DEBUG)
+
+logger.info("Starting with options %r", vars(options))
+
+
 filename = options.file
 if not filename:
     parser.print_usage()
@@ -618,100 +778,6 @@ if options.locker == 'portalocker':
 else:
     import fcntl
     lock_exception_klass = IOError
-
-class LockingError(Exception):
-    """ Exception raised for errors creating or destroying lockfiles. """
-    pass
-
-
-def start_locking(lockfile_name):
-    """ Acquire a lock via a provided lockfile filename. """
-    if os.path.exists(lockfile_name):
-        raise LockingError("Lock file (%s) already exists." % lockfile_name)
-
-    f = open(lockfile_name, 'w')
-
-    try:
-        if options.locker == 'portalocker':
-            portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
-        else:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        f.write("%s" % os.getpid())
-    except lock_exception_klass:
-        # Would be better to also check the pid in the lock file and remove the
-        # lock file if that pid no longer exists in the process table.
-        raise LockingError("Cannot acquire logster lock (%s)" % lockfile_name)
-
-    #logger.debug("Locking successful")
-    return f
-
-
-def end_locking(lockfile_fd, lockfile_name):
-    """ Release a lock via a provided file descriptor. """
-    try:
-        if options.locker == 'portalocker':
-            portalocker.unlock(lockfile_fd) # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
-        else:
-            if platform.system() == "SunOS": # GH issue #17
-                fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
-            else:
-                fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
-    except lock_exception_klass:
-        raise LockingError("Cannot release logster lock (%s)" % lockfile_name)
-
-    try:
-        lockfile_fd.close()
-        os.unlink(lockfile_name)
-    except OSError as e:
-        raise LockingError("Cannot unlink %s" % lockfile_name)
-
-    #logger.debug("Unlocking successful")
-    return
-
-class SafeFile(object):
-    def __init__(self, workdir, identifier, suffix = ''):
-        self.identifier = identifier
-        self.suffix = suffix
-        self.sane_filename = re.sub(r'\W', '_', self.identifier + self.suffix)
-        self.workdir = workdir
-        self.main = os.path.join(self.workdir, self.sane_filename)
-        self.tmp = "%s.%d.tmp" % (self.main, os.getpid())
-        self.old = "%s.old" % (self.main)
-        self.lock = "%s.lock" % (self.main)
-
-    def suffixed(self, suffix):
-        return SafeFile(self.workdir, self.identifier, suffix='.' + suffix)
-
-    def main2old(self):
-        try:
-            os.unlink(self.old)
-            shutil.copy2(self.main, self.old)
-        except:
-            pass
-
-    def tmp2main(self):
-        self.main2old()
-        os.rename(self.tmp, self.main)
-
-    def tmpclean(self):
-        try:
-            os.remove(self.tmp)
-            print("Removed %s" % self.tmp)
-        except:
-            pass
-
-    def main2tmp(self):
-        if os.path.isfile(self.main):
-            shutil.copy2(self.main, self.tmp)
-
-    def remove_main(self):
-        self.main2old()
-        self.tmpclean()
-        try:
-            os.remove(self.main)
-        except:
-            pass
-
 
 
 
@@ -735,7 +801,7 @@ try:
     lockfile = start_locking(files['lock'].main)
 except LockingError as e:
     #logger.warning(str(e))
-    print("Locking error: ", str(e))
+    logger.error("Locking error: ", str(e))
     sys.exit(1)
 
 
@@ -773,16 +839,19 @@ try:
 
     if (status['leftover'] is not None and len(status['leftover']) > 0):
         exit = False
+        msg = 'Error:'
         if status['bucket_duration'] != options.bucket_duration:
-            print("Error: bucket duration mismatch %d vs %d (set via option)" %
+            msg += (" Bucket duration mismatch %d vs %d (set via option)" %
                   (status['bucket_duration'], options.bucket_duration))
             exit = True
         if status['lookback_factor'] != options.lookback_factor:
-            print("Error: lookback factor mismatch %d vs %d (set via option)" %
+            msg += (" Lookback factor mismatch %d vs %d (set via option)" %
                   (status['lookback_factor'], options.lookback_factor))
             exit = True
         if exit:
-            print("Exiting. If you know what you are doing, remove status file %s" % files['status'].main)
+            msg += (" If you know what you are doing, remove status file %s" % files['status'].main)
+            logger.error(msg)
+            print(msg)
             sys.exit(1)
 
     mbs, leftover, last_msec = parsefile(pygtail, status, options)
@@ -797,10 +866,15 @@ try:
         }
         if options.datacenter:
             tags['dc'] = options.datacenter
-        influxdb_send(influxdb, points, tags)
+        influxdb_send(influxdb, points, tags, options)
 
     save_obj(status, files['status'].tmp)
-except:
+except KeyboardInterrupt:
+    print("Exiting...")
+    logger.info("Exiting on keyboard interrupt")
+    cleanup()
+except Exception as e:
+    logger.error(str(e))
     cleanup()
     raise
 else:
@@ -808,5 +882,5 @@ else:
 finally:
     try:
         end_locking(lockfile, files['lock'].main)
-    except Exception as e:
+    except:
         pass
