@@ -147,22 +147,22 @@ def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
     for line in pygtail:
         try:
             items = line.rstrip('\r\n').split('|')
-            row = dict()
-            row['msec'] = float(items[pos_msec])
-            if row['msec'] <= ignore_before:
+            msec = float(items[pos_msec])
+            if msec <= ignore_before:
                 # skip unordered & old entries
                 continue
-            if row['msec'] > max_msec:
-                max_msec = row['msec']
-            bucket = int(math.ceil(float(row['msec'])/bucket_secs))
+            if msec > max_msec:
+                max_msec = msec
+            bucket = int(math.ceil(float(msec)/bucket_secs))
 
-            row['vhost'] = items[pos_vhost]
-            row['protocol'] = items[pos_protocol]
-            row['loctag'] = items[pos_loctag]
-
-            row['status'] = int(items[pos_status])
-            row['bytes_sent'] = int(items[pos_bytes_sent])
-            row['request_length'] = int(items[pos_request_length])
+            row = {
+                'vhost': items[pos_vhost],
+                'protocol': items[pos_protocol],
+                'loctag': items[pos_loctag],
+                'status': int(items[pos_status]),
+                'bytes_sent': int(items[pos_bytes_sent]),
+                'request_length': int(items[pos_request_length]),
+            }
 
             if items[pos_gzip_ratio] != '-':
                 row['gzip_ratio'] = float(items[pos_gzip_ratio])
