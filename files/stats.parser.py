@@ -479,7 +479,7 @@ parser.add_argument('-s', '--start', type=int)
 parser.add_argument('-m', '--maxlines', default=0, type=int)
 parser.add_argument('-w', '--workdir', default='.')
 parser.add_argument('-H', '--hostname', default=platform.node())
-parser.add_argument('-l', '--logname', default='')
+parser.add_argument('-n', '--name', default='')
 parser.add_argument('-d', '--datacenter', default='')
 parser.add_argument('--deletedatabase', action='store_true', default=False)
 parser.add_argument('--locker', choices=('fcntl', 'portalocker'), default='fcntl')
@@ -487,9 +487,9 @@ parser.add_argument('-b', '--lookbackfactor', type=int, default=2)
 parser.add_argument('--startover', action='store_true', default=False)
 
 
-args = parser.parse_args()
-print(args)
-if args.locker == 'portalocker':
+options = parser.parse_args()
+print(options)
+if options.locker == 'portalocker':
     import portalocker
     lock_exception_klass = portalocker.LockException
 else:
@@ -509,7 +509,7 @@ def start_locking(lockfile_name):
     f = open(lockfile_name, 'w')
 
     try:
-        if args.locker == 'portalocker':
+        if options.locker == 'portalocker':
             portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
         else:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -526,7 +526,7 @@ def start_locking(lockfile_name):
 def end_locking(lockfile_fd, lockfile_name):
     """ Release a lock via a provided file descriptor. """
     try:
-        if args.locker == 'portalocker':
+        if options.locker == 'portalocker':
             portalocker.unlock(lockfile_fd) # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
         else:
             if platform.system() == "SunOS": # GH issue #17
@@ -591,9 +591,9 @@ class SafeFile(object):
 
 
 
-filename = args.file
+filename = options.file
 
-workdir = os.path.abspath(args.workdir)
+workdir = os.path.abspath(options.workdir)
 safefile = SafeFile(workdir, filename)
 files = {
     'offset':   safefile.suffixed('offset'),
@@ -601,7 +601,7 @@ files = {
     'lock':     safefile.suffixed('lock')
 }
 
-if args.startover:
+if options.startover:
     files['offset'].remove_main()
     files['leftover'].remove_main()
     files['lock'].remove_main()
@@ -634,7 +634,7 @@ bucket_secs = 60
 lookbackfactor = 2
 res = False
 try:
-    influxdb = influxdb_client(deletedatabase=args.deletedatabase)
+    influxdb = influxdb_client(deletedatabase=options.deletedatabase)
 
     files['offset'].main2tmp()
 
@@ -650,18 +650,18 @@ try:
 
     status['bucket_secs'] = bucket_secs
     status['lookbackfactor'] = lookbackfactor
-    mbs, leftover, last_msec = parsefile(pygtail, status, maxlines=args.maxlines)
+    mbs, leftover, last_msec = parsefile(pygtail, status, maxlines=options.maxlines)
     status['leftover'] = leftover
     status['last_msec'] = last_msec
 
     points = mbs2influx(mbs, status)
     if points:
         tags = {
-            'host': args.hostname,
-            'logname': args.logname or filename,
+            'host': options.hostname,
+            'name': options.name or filename,
         }
-        if args.datacenter:
-            tags['dc'] = args.datacenter
+        if options.datacenter:
+            tags['dc'] = options.datacenter
         influxdb_send(influxdb, points, tags)
 
     save_obj(status, files['leftover'].tmp)
