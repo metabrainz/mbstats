@@ -497,6 +497,8 @@ parser.add_argument('-d', '--datacenter', default='')
 parser.add_argument('--deletedatabase', action='store_true', default=False)
 parser.add_argument('--locker', choices=('fcntl', 'portalocker'), default='fcntl')
 parser.add_argument('-b', '--lookbackfactor', type=int, default=2)
+parser.add_argument('--startover', action='store_true', default=False)
+
 
 args = parser.parse_args()
 print(args)
@@ -570,12 +572,15 @@ class SafeFile(object):
     def suffixed(self, suffix):
         return SafeFile(self.workdir, self.identifier, suffix='.' + suffix)
 
-    def tmp2main(self):
+    def main2old(self):
         try:
             os.unlink(self.old)
             shutil.copy2(self.main, self.old)
         except:
             pass
+
+    def tmp2main(self):
+        self.main2old()
         os.rename(self.tmp, self.main)
 
     def tmpclean(self):
@@ -589,6 +594,15 @@ class SafeFile(object):
         if os.path.isfile(self.main):
             shutil.copy2(self.main, self.tmp)
 
+    def remove_main(self):
+        self.main2old()
+        self.tmpclean()
+        try:
+            os.remove(self.main)
+        except:
+            pass
+
+
 
 filename = args.file
 
@@ -600,6 +614,10 @@ files = {
     'lock':     safefile.suffixed('lock')
 }
 
+if args.startover:
+    files['offset'].remove_main()
+    files['leftover'].remove_main()
+    files['lock'].remove_main()
 
 # Check for lock file so we don't run multiple copies of the same parser
 # simultaneuosly. This will happen if the log parsing takes more time than
