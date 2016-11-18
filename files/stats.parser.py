@@ -652,14 +652,19 @@ try:
         status['bucket_secs'] = options.bucketsecs
         status['lookbackfactor'] = options.lookbackfactor
 
-    if (status['leftover'] is not None
-        and len(status['leftover']) > 0
-        and (status['bucket_secs'] != options.bucketsecs
-             or status['lookbackfactor'] != options.lookbackfactor)):
-        print("Error: found leftovers from previous run with different "
-              "bucketsecs or lookback factor values. "
-              "If you know what you are doing, remove status file %s" % files['status'].main)
-        sys.exit(1)
+    if (status['leftover'] is not None and len(status['leftover']) > 0):
+        exit = False
+        if status['bucket_secs'] != options.bucketsecs:
+            print("Error: bucketsecs mismatch %d vs %d (set via option)" %
+                  (status['bucket_secs'], options.bucketsecs))
+            exit = True
+        if status['lookbackfactor'] != options.lookbackfactor:
+            print("Error: lookbackfactor mismatch %d vs %d (set via option)" %
+                  (status['lookbackfactor'], options.lookbackfactor))
+            exit = True
+        if exit:
+            print("Exiting. If you know what you are doing, remove status file %s" % files['status'].main)
+            sys.exit(1)
 
     mbs, leftover, last_msec = parsefile(pygtail, status, options)
     status['leftover'] = leftover
