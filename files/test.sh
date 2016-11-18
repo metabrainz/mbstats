@@ -18,11 +18,11 @@ head -5000000 $STATSLOG_SOURCE > $STATSLOG
 
 COMMON_OPTS=" stats.parser.py -f $STATSLOG -w $TESTTMPDIR -n $NOW"
 CMD="time $INTERPRETER $COMMON_OPTS"
-$CMD -m 1000 --deletedatabase --startover;
-#test change of bucketsecs, must fail (hence the !)
-! $CMD -m 1000 --bucketsecs 30 && echo "Testing exit on change of bucketsecs, SUCCESS"
-#test change of lookbackfactor, must fail (hence the !)
-! $CMD -m 1000 --lookbackfactor 3 && echo "Testing exit on change of lookbackfactor, SUCCESS"
+$CMD -m 1000 --influx-drop-database --startover;
+#test change of bucket duration, must fail (hence the !)
+! $CMD -m 1000 --bucket-duration 30 && echo "Testing exit on change of bucket duration, SUCCESS"
+#test change of lookback factor, must fail (hence the !)
+! $CMD -m 1000 --lookback-factor 3 && echo "Testing exit on change of lookback factor, SUCCESS"
 $CMD -m 300000;
 for i in $(seq 1 10); do
 	$CMD -m 70000;

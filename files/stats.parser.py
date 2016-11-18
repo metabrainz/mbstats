@@ -136,13 +136,13 @@ def parse_upstreams(row):
 
 
 def parsefile(tailer, status, options):
-    maxlines = options.maxlines
-    bucket_secs = status['bucket_secs']
-    lookbackfactor = status['lookbackfactor']
+    max_lines = options.max_lines
+    bucket_duration = status['bucket_duration']
+    lookback_factor = status['lookback_factor']
     mbs = mbsdict()
     # lines are logged when request ends, which means they can be unordered
     if status['last_msec']:
-        ignore_before = status['last_msec'] - bucket_secs * lookbackfactor
+        ignore_before = status['last_msec'] - bucket_duration * lookback_factor
     else:
         ignore_before = 0
     last_msec = 0
@@ -165,7 +165,7 @@ def parsefile(tailer, status, options):
                 continue
             if msec > last_msec:
                 last_msec = msec
-            bucket = int(math.ceil(float(msec)/bucket_secs))
+            bucket = int(math.ceil(float(msec)/bucket_duration))
 
             row = {
                 'vhost': items[pos_vhost],
@@ -191,7 +191,7 @@ def parsefile(tailer, status, options):
                 })
 
             storage[bucket].append(row)
-            ready_to_process = bucket - lookbackfactor
+            ready_to_process = bucket - lookback_factor
 
             if ready_to_process in storage:
                 process_bucket(ready_to_process, storage, status, mbs)
@@ -199,8 +199,8 @@ def parsefile(tailer, status, options):
             print(e, line)
             print(row)
             raise
-        maxlines -= 1
-        if maxlines == 0:
+        max_lines -= 1
+        if max_lines == 0:
             break
     if skipped:
         print("Skipped %d unordered lines" % skipped)
@@ -208,7 +208,7 @@ def parsefile(tailer, status, options):
     last_bucket = bucket
     for bucket in storage:
          print ("Unprocessed bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
-         if bucket < last_bucket - lookbackfactor:
+         if bucket < last_bucket - lookback_factor:
             print ("Removing old bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
             del storage[bucket]
     mbspostprocess(mbs)
@@ -420,7 +420,7 @@ def load_obj(filepath):
 
 def bucket2time(bucket, status):
     d = datetime.datetime.utcfromtimestamp(
-            bucket*status['bucket_secs']
+            bucket*status['bucket_duration']
     )
     return d.isoformat() + 'Z'
 
@@ -448,26 +448,21 @@ def mbs2influx(mbs, status):
             })
     return points
 
-# TODO: influxdb params
-def influxdb_client(host='localhost',
-                    port=8086,
-                    username='root',
-                    password='root',
-                    database='mbstats',
-                    timeout=40,
-                    deletedatabase=False):
-    client = InfluxDBClient(host=host,
-                            port=port,
-                            username=username,
-                            password=password,
+
+def influxdb_client(options):
+    database = options.influx_database
+    client = InfluxDBClient(host=options.influx_host,
+                            port=options.influx_port,
+                            username=options.influx_username,
+                            password=options.influx_password,
                             database=database,
-                            timeout=timeout)
-    if deletedatabase:
+                            timeout=options.influx_timeout)
+    if options.influx_drop_database:
         client.drop_database(database)
     client.create_database(database)
     return client
 
-def influxdb_send(client, points, tags, batch_size=200):
+def influxdb_send(client, points, tags, batch_size=500):
     npoints = len(points)
     if npoints:
         print("Sending %d points" % npoints)
@@ -475,23 +470,103 @@ def influxdb_send(client, points, tags, batch_size=200):
         return client.write_points(points, tags=tags, time_precision='m', batch_size=batch_size)
     return True
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-f', '--file')
-parser.add_argument('-s', '--start', type=int)
-parser.add_argument('-m', '--maxlines', default=0, type=int)
-parser.add_argument('-w', '--workdir', default='.')
-parser.add_argument('-H', '--hostname', default=platform.node())
-parser.add_argument('-n', '--name', default='')
-parser.add_argument('-d', '--datacenter', default='')
-parser.add_argument('--deletedatabase', action='store_true', default=False)
-parser.add_argument('--locker', choices=('fcntl', 'portalocker'), default='fcntl')
-parser.add_argument('-b', '--lookbackfactor', type=int, default=2)
-parser.add_argument('--startover', action='store_true', default=False)
-parser.add_argument('-B', '--bucketsecs', type=int, default=60)
+
+
+description= \
+"""Tail and parse a formatted nginx log file, sending results to InfluxDB."""
+epilog = \
+"""
+To use add following to http section of your nginx configuration:
+
+  log_format stats
+    '1|'
+    '$msec|'
+    '$host|'
+    '$statproto|'
+    '$loctag|'
+    '$status|'
+    '$bytes_sent|'
+    '$gzip_ratio|'
+    '$request_length|'
+    '$request_time|'
+    '$upstream_addr|'
+    '$upstream_status|'
+    '$upstream_response_time|'
+    '$upstream_connect_time|'
+    '$upstream_header_time';
+
+  map $host $loctag {
+    default '-';
+  }
+
+  map $https $statproto {
+    default '-';
+    on 's';
+  }
+
+You can use $loctag to tag a specific location:
+    set $loctag "ws";
+
+In addition of your usual access log, add something like:
+    access_log /var/log/nginx/my.stats.log stats buffer=256k flush=10s
+
+Note: first field in stats format declaration is a format version, it should be set to 1.
+
+"""
+parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
+
+required = parser.add_argument_group('required arguments')
+required.add_argument('-f', '--file', help="log file to process")
+
+common = parser.add_argument_group('common arguments')
+common.add_argument('-m', '--max-lines', default=0, type=int,
+                    help="maximum number of lines to process")
+common.add_argument('-w', '--workdir', default='.',
+                   help="directory where offset/status are stored")
+common.add_argument('-H', '--hostname', default=platform.node(),
+                   help="string to use as 'host' tag")
+common.add_argument('-n', '--name', default='',
+                   help="string to use as 'name' tag")
+common.add_argument('-d', '--datacenter', default='',
+                   help="string to use as 'dc' tag")
+
+influx = parser.add_argument_group('influxdb arguments')
+influx.add_argument('--influx-host', default='localhost',
+                   help="influxdb host")
+influx.add_argument('--influx-port', default=8086, type=int,
+                   help="influxdb port")
+influx.add_argument('--influx-username', default='root',
+                   help="influxdb username")
+influx.add_argument('--influx-password', default='root',
+                   help="influxdb password")
+influx.add_argument('--influx-database', default='mbstats',
+                   help="influxdb database")
+influx.add_argument('--influx-timeout', default=40, type=int,
+                   help="influxdb timeout")
+
+expert = parser.add_argument_group('expert arguments')
+expert.add_argument('--influx-drop-database', action='store_true', default=False,
+                   help="drop existing InfluxDB database, use with care")
+expert.add_argument('--locker', choices=('fcntl', 'portalocker'),
+                    default='fcntl',
+                    help="type of lock to use")
+expert.add_argument('--lookback-factor', type=int, default=2,
+                   help="number of buckets to wait before sending any data")
+expert.add_argument('--startover', action='store_true', default=False,
+                   help="ignore all status/offset, like a first run")
+expert.add_argument('--ignore-first-run', action='store_true', default=False,
+                   help="do not skip to end on first run")
+expert.add_argument('--bucket-duration', type=int, default=60,
+                   help="duration for each bucket in seconds")
 
 
 options = parser.parse_args()
 print(options)
+filename = options.file
+if not filename:
+    parser.print_help()
+    sys.exit(1)
+
 if options.locker == 'portalocker':
     import portalocker
     lock_exception_klass = portalocker.LockException
@@ -594,7 +669,6 @@ class SafeFile(object):
 
 
 
-filename = options.file
 
 workdir = os.path.abspath(options.workdir)
 safefile = SafeFile(workdir, filename)
@@ -635,7 +709,7 @@ def finalize():
 
 res = False
 try:
-    influxdb = influxdb_client(deletedatabase=options.deletedatabase)
+    influxdb = influxdb_client(options)
 
     files['offset'].main2tmp()
 
@@ -649,18 +723,18 @@ try:
     if not 'last_msec' in status:
         status['last_msec'] = 0
         status['leftover'] = None
-        status['bucket_secs'] = options.bucketsecs
-        status['lookbackfactor'] = options.lookbackfactor
+        status['bucket_duration'] = options.bucket_duration
+        status['lookback_factor'] = options.lookback_factor
 
     if (status['leftover'] is not None and len(status['leftover']) > 0):
         exit = False
-        if status['bucket_secs'] != options.bucketsecs:
-            print("Error: bucketsecs mismatch %d vs %d (set via option)" %
-                  (status['bucket_secs'], options.bucketsecs))
+        if status['bucket_duration'] != options.bucket_duration:
+            print("Error: bucket duration mismatch %d vs %d (set via option)" %
+                  (status['bucket_duration'], options.bucket_duration))
             exit = True
-        if status['lookbackfactor'] != options.lookbackfactor:
-            print("Error: lookbackfactor mismatch %d vs %d (set via option)" %
-                  (status['lookbackfactor'], options.lookbackfactor))
+        if status['lookback_factor'] != options.lookback_factor:
+            print("Error: lookback factor mismatch %d vs %d (set via option)" %
+                  (status['lookback_factor'], options.lookback_factor))
             exit = True
         if exit:
             print("Exiting. If you know what you are doing, remove status file %s" % files['status'].main)
