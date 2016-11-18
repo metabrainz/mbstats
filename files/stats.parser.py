@@ -597,13 +597,13 @@ workdir = os.path.abspath(options.workdir)
 safefile = SafeFile(workdir, filename)
 files = {
     'offset':   safefile.suffixed('offset'),
-    'leftover': safefile.suffixed('leftover'),
+    'status':   safefile.suffixed('status'),
     'lock':     safefile.suffixed('lock')
 }
 
 if options.startover:
     files['offset'].remove_main()
-    files['leftover'].remove_main()
+    files['status'].remove_main()
     files['lock'].remove_main()
 
 # Check for lock file so we don't run multiple copies of the same parser
@@ -619,13 +619,13 @@ except LockingError as e:
 
 def cleanup():
     files['offset'].tmpclean()
-    files['leftover'].tmpclean()
+    files['status'].tmpclean()
     end_locking(lockfile, files['lock'].main)
 
 def finalize():
     try:
         files['offset'].tmp2main()
-        files['leftover'].tmp2main()
+        files['status'].tmp2main()
     except:
         cleanup()
         raise
@@ -641,7 +641,7 @@ try:
     pygtail = Pygtail(filename, offset_file=files['offset'].tmp)
 
     try:
-        status = load_obj(files['leftover'].main)
+        status = load_obj(files['status'].main)
     except IOError:
         status = {
             'last_msec': 0,
@@ -664,7 +664,7 @@ try:
             tags['dc'] = options.datacenter
         influxdb_send(influxdb, points, tags)
 
-    save_obj(status, files['leftover'].tmp)
+    save_obj(status, files['status'].tmp)
 except:
     cleanup()
     raise
