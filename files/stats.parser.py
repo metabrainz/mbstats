@@ -136,10 +136,10 @@ def parse_upstreams(row):
 
 
 def parsefile(pygtail, status, maxlines = 1000, bucket_secs=60,
-              unordereddelay=2):
+              lookbackfactor=2):
     # lines are logged when request ends, which means they can be unordered
     if status['last_msec']:
-        ignore_before = status['last_msec'] - bucket_secs * unordereddelay
+        ignore_before = status['last_msec'] - bucket_secs * lookbackfactor
     else:
         ignore_before = 0
     max_msec = 0
@@ -210,10 +210,10 @@ def parse_storage(storage, status):
     print("Storage n_buckets: %d" % n_buckets)
     if not n_buckets:
         return (dict(), leftover)
-    if n_buckets <= status['unordereddelay']:
+    if n_buckets <= status['lookbackfactor']:
         return (dict(), storage)
 
-    n = status['unordereddelay']
+    n = status['lookbackfactor']
     while n > 0:
         last_bucket = max(storage.keys())
         leftover[last_bucket] = list(storage[last_bucket])
@@ -492,7 +492,7 @@ parser.add_argument('-l', '--logname', default='')
 parser.add_argument('-d', '--datacenter', default='')
 parser.add_argument('--deletedatabase', action='store_true', default=False)
 parser.add_argument('--locker', choices=('fcntl', 'portalocker'), default='fcntl')
-parser.add_argument('-u', '--unordereddelay', type=int, default=2)
+parser.add_argument('-b', '--lookbackfactor', type=int, default=2)
 
 args = parser.parse_args()
 print(args)
@@ -622,7 +622,7 @@ def finalize():
         raise
 
 bucket_secs = 60
-unordereddelay = 2
+lookbackfactor = 2
 res = False
 try:
     influxdb = influxdb_client(deletedatabase=args.deletedatabase)
@@ -640,7 +640,7 @@ try:
         }
 
     status['bucket_secs'] = bucket_secs
-    status['unordereddelay'] = unordereddelay
+    status['lookbackfactor'] = lookbackfactor
     storage, max_msec = parsefile(pygtail, status, maxlines=args.maxlines)
     mbs, leftover = parse_storage(storage, status)
     status['leftover'] = leftover
