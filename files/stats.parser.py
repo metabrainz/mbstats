@@ -135,8 +135,10 @@ def parse_upstreams(row):
     return r
 
 
-def parsefile(tailer, status, maxlines = 1000, bucket_secs=60,
-              lookbackfactor=2):
+def parsefile(tailer, status, options):
+    maxlines = options.maxlines
+    bucket_secs = status['bucket_secs']
+    lookbackfactor = status['lookbackfactor']
     mbs = mbsdict()
     # lines are logged when request ends, which means they can be unordered
     if status['last_msec']:
@@ -485,6 +487,7 @@ parser.add_argument('--deletedatabase', action='store_true', default=False)
 parser.add_argument('--locker', choices=('fcntl', 'portalocker'), default='fcntl')
 parser.add_argument('-b', '--lookbackfactor', type=int, default=2)
 parser.add_argument('--startover', action='store_true', default=False)
+parser.add_argument('-B', '--bucketsecs', type=int, default=60)
 
 
 options = parser.parse_args()
@@ -630,8 +633,6 @@ def finalize():
         cleanup()
         raise
 
-bucket_secs = 60
-lookbackfactor = 2
 res = False
 try:
     influxdb = influxdb_client(deletedatabase=options.deletedatabase)
@@ -643,14 +644,24 @@ try:
     try:
         status = load_obj(files['status'].main)
     except IOError:
-        status = {
-            'last_msec': 0,
-            'leftover' : None
-        }
+        status = {}
 
-    status['bucket_secs'] = bucket_secs
-    status['lookbackfactor'] = lookbackfactor
-    mbs, leftover, last_msec = parsefile(pygtail, status, maxlines=options.maxlines)
+    if not 'last_msec' in status:
+        status['last_msec'] = 0
+        status['leftover'] = None
+        status['bucket_secs'] = options.bucketsecs
+        status['lookbackfactor'] = options.lookbackfactor
+
+    if (status['leftover'] is not None
+        and len(status['leftover']) > 0
+        and (status['bucket_secs'] != options.bucketsecs
+             or status['lookbackfactor'] != options.lookbackfactor)):
+        print("Error: found leftovers from previous run with different "
+              "bucketsecs or lookback factor values. "
+              "If you know what you are doing, remove status file %s" % files['status'].main)
+        sys.exit(1)
+
+    mbs, leftover, last_msec = parsefile(pygtail, status, options)
     status['leftover'] = leftover
     status['last_msec'] = last_msec
 
