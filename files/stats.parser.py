@@ -210,7 +210,7 @@ def parse_storage(storage, status):
         print("storage+leftover", bucket2time(k, status), len(storage[k]))
 
     leftover = defaultdict(list)
-    n_buckets = len(storage.keys())
+    n_buckets = len(storage)
     print("Storage n_buckets: %d" % n_buckets)
     if not n_buckets:
         return (dict(), leftover)
@@ -219,7 +219,7 @@ def parse_storage(storage, status):
 
     n = status['lookbackfactor']
     while n > 0:
-        last_bucket = max(storage.keys())
+        last_bucket = max(storage)
         leftover[last_bucket] = list(storage[last_bucket])
         del storage[last_bucket]
         n -= 1
@@ -227,8 +227,8 @@ def parse_storage(storage, status):
     for k in leftover:
         print ("Leftover bucket: %s %d" % (bucket2time(k, status), len(leftover[k])))
 
-    print("Storage %s -> %s" % (bucket2time(min(storage.keys()), status),
-                                bucket2time(max(storage.keys()), status)))
+    print("Storage %s -> %s" % (bucket2time(min(storage), status),
+                                bucket2time(max(storage), status)))
     return (calculate_full_buckets(storage, status), leftover)
 
 def mbsdict():
@@ -261,7 +261,7 @@ def mbsdict():
 def calculate_full_buckets(storage, status):
     mbs = mbsdict()
 
-    for k in storage.keys():
+    for k in storage:
         print("bucket=%d len=%d" % (k, len(storage[k])))
         for r in storage[k]:
 #    mbs['hits']:
