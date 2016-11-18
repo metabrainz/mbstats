@@ -231,32 +231,35 @@ def parse_storage(storage, status):
                                 bucket2time(max(storage.keys()), status)))
     return (calculate_full_buckets(storage, status), leftover)
 
+def mbsdict():
+    return {
+        'bytes_sent': defaultdict(int),
+        'gzip_count': defaultdict(int),
+        'gzip_percent': defaultdict(float),
+        'gzip_ratio_mean': defaultdict(float),
+        '_gzip_ratio_premean': defaultdict(float),
+        'hits': defaultdict(int),
+        'request_length_mean': defaultdict(float),
+        '_request_length_premean': defaultdict(int),
+        'request_time_mean': defaultdict(float),
+        '_request_time_premean': defaultdict(float),
+        'status': defaultdict(int),
+        'upstreams_connect_time_mean': defaultdict(float),
+        '_upstreams_connect_time_premean': defaultdict(float),
+        'upstreams_header_time_mean': defaultdict(float),
+        '_upstreams_header_time_premean': defaultdict(float),
+        'upstreams_hits': defaultdict(int),
+        'upstreams_internal_redirects': defaultdict(int),
+        'upstreams_response_time_mean': defaultdict(float),
+        '_upstreams_response_time_premean': defaultdict(float),
+        'upstreams_servers_contacted': defaultdict(int),
+        'upstreams_servers': defaultdict(int),
+        'upstreams_status': defaultdict(int),
+    }
+
 #@profile
 def calculate_full_buckets(storage, status):
-    mbs = dict()
-    mbs['hits'] = defaultdict(int)
-    mbs['status'] = defaultdict(int)
-    mbs['bytes_sent'] = defaultdict(int)
-    mbs['gzip_count'] = defaultdict(int)
-    mbs['_gzip_ratio_premean'] = defaultdict(float)
-    mbs['_request_length_premean'] = defaultdict(int)
-    mbs['_request_time_premean'] = defaultdict(float)
-    mbs['upstreams_hits'] = defaultdict(int)
-    mbs['upstreams_status'] = defaultdict(int)
-    mbs['upstreams_servers_contacted'] = defaultdict(int)
-    mbs['upstreams_internal_redirects'] = defaultdict(int)
-    mbs['upstreams_servers'] = defaultdict(int)
-    mbs['_upstreams_response_time_premean'] = defaultdict(float)
-    mbs['_upstreams_connect_time_premean'] = defaultdict(float)
-    mbs['_upstreams_header_time_premean'] = defaultdict(float)
-
-    mbs['gzip_percent'] = defaultdict(float)
-    mbs['gzip_ratio_mean'] = defaultdict(float)
-    mbs['request_length_mean'] = defaultdict(float)
-    mbs['request_time_mean'] = defaultdict(float)
-    mbs['upstreams_response_time_mean'] = defaultdict(float)
-    mbs['upstreams_connect_time_mean'] = defaultdict(float)
-    mbs['upstreams_header_time_mean'] = defaultdict(float)
+    mbs = mbsdict()
 
     for k in storage.keys():
         print("bucket=%d len=%d" % (k, len(storage[k])))
