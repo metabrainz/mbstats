@@ -264,32 +264,26 @@ def calculate_full_buckets(storage, status):
             tags = (k, r['vhost'], r['protocol'], r['loctag'])
             mbs['hits'][tags] += 1
 
-#    mbs['status']:
-#        tags: vhost, protocol, loc,  status
-#        value: count
-#
-            tags = (k, r['vhost'], r['protocol'], r['loctag'], r['status'])
-            mbs['status'][tags] += 1
-
 #    mbs['bytes_sent']:
 #        tags: vhost, protocol, loc
 #        value: sum
 #
-            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+#            tags = (k, r['vhost'], r['protocol'], r['loctag'])
             mbs['bytes_sent'][tags] += r['bytes_sent']
 
 
 #    mbs['gzip_count']:
 #        tags: vhost, protocol, loc
 #        value: count
-            tags = (k, r['vhost'], r['protocol'], r['loctag'])
-            mbs['gzip_count'][tags] += ('gzip_ratio' in r)
+#            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+#           mbs['gzip_count'][tags] += ('gzip_ratio' in r)
 
 #    mbs['gzip_ratio']:
 #        tags: vhost, protocol, loc
 #        value: sum of gzip ratio / number of gzipped requests
             if 'gzip_ratio' in r:
-                tags = (k, r['vhost'], r['protocol'], r['loctag'])
+                mbs['gzip_count'][tags] += 1
+#                tags = (k, r['vhost'], r['protocol'], r['loctag'])
                 mbs['_gzip_ratio_premean'][tags] += r['gzip_ratio']
 
 #
@@ -297,15 +291,22 @@ def calculate_full_buckets(storage, status):
 #        tags: vhost, protocol, loc
 #        value: sum of request_length / hits
 #
-            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+#            tags = (k, r['vhost'], r['protocol'], r['loctag'])
             mbs['_request_length_premean'][tags] += r['request_length']
 
 #    mbs['request_time']:
 #        tags: vhost, protocol, loc
 #        value: sum of request_time / hits
 #
-            tags = (k, r['vhost'], r['protocol'], r['loctag'])
+#            tags = (k, r['vhost'], r['protocol'], r['loctag'])
             mbs['_request_time_premean'][tags] += r['request_time']
+
+#    mbs['status']:
+#        tags: vhost, protocol, loc,  status
+#        value: count
+#
+            tags = (k, r['vhost'], r['protocol'], r['loctag'], r['status'])
+            mbs['status'][tags] += 1
 
 ##### upstreams
 
@@ -367,14 +368,14 @@ def calculate_full_buckets(storage, status):
 #        tags: vhost, protocol, loc
 #        value: sum of internal_redirects
 #
-                tags = (k, r['vhost'], r['protocol'], r['loctag'])
+#                tags = (k, r['vhost'], r['protocol'], r['loctag'])
                 mbs['upstreams_internal_redirects'][tags] += r['upstreams']['internal_redirects']
 
 #    mbs['upstreams_servers_count']:
 #        tags: vhost, protocol, loc
 #        value: sum of len of servers
 #
-                tags = (k, r['vhost'], r['protocol'], r['loctag'])
+#                tags = (k, r['vhost'], r['protocol'], r['loctag'])
                 mbs['upstreams_servers'][tags] += len(r['upstreams']['servers'])
 
 ###### calculations of means
@@ -393,6 +394,12 @@ def calculate_full_buckets(storage, status):
             for k, v in mbs['_request_time_premean'].items():
                 mbs['request_time_mean'][k] = v / mbs['hits'][k]
 
+            for k, v in mbs['hits'].items():
+                if mbs['gzip_count'] and v:
+                    mbs['gzip_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
+                else:
+                    mbs['gzip_percent'][k] = 0.0
+
         if mbs['upstreams_hits']:
             # mbs['upstreams_response_time_mean']
             for k, v in mbs['_upstreams_response_time_premean'].items():
@@ -406,14 +413,6 @@ def calculate_full_buckets(storage, status):
             for k, v in mbs['_upstreams_header_time_premean'].items():
                 mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
 
-###### calculations of percentage
-
-        if mbs['hits']:
-            for k, v in mbs['hits'].items():
-                if mbs['gzip_count'] and v:
-                    mbs['gzip_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
-                else:
-                    mbs['gzip_percent'][k] = 0.0
     return mbs
 
 
