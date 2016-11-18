@@ -424,11 +424,11 @@ def calculate_full_buckets(storage, status):
 
 
 def save_obj(obj, filepath):
-    with gzip.GzipFile(filepath, 'wb') as f:
-        pickle.dump(obj, f)
+    with open(filepath, 'wb') as f:
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
 def load_obj(filepath):
-    with gzip.GzipFile(filepath, 'rb') as f:
+    with open(filepath, 'rb') as f:
         return pickle.load(f)
 
 
