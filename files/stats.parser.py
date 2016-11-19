@@ -295,148 +295,53 @@ def process_bucket(bucket, storage, status, mbs):
     logger.info("Processing bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
 
     for row in storage[bucket]:
-#    mbs['hits']:
-#        tags: vhost, protocol, loc
-#        value: count
-#
         tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
         mbs['hits'][tags] += 1
-
-#    mbs['bytes_sent']:
-#        tags: vhost, protocol, loc
-#        value: sum
-#
-#            tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
         mbs['bytes_sent'][tags] += row['bytes_sent']
 
-
-#    mbs['gzip_count']:
-#        tags: vhost, protocol, loc
-#        value: count
-#            tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
-#           mbs['gzip_count'][tags] += ('gzip_ratio' in r)
-
-#    mbs['gzip_ratio']:
-#        tags: vhost, protocol, loc
-#        value: sum of gzip ratio / number of gzipped requests
         if 'gzip_ratio' in row:
             mbs['gzip_count'][tags] += 1
-#                tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
             mbs['_gzip_ratio_premean'][tags] += row['gzip_ratio']
 
-#
-#    mbs['request_length']:
-#        tags: vhost, protocol, loc
-#        value: sum of request_length / hits
-#
-#            tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
         mbs['_request_length_premean'][tags] += row['request_length']
-
-#    mbs['request_time']:
-#        tags: vhost, protocol, loc
-#        value: sum of request_time / hits
-#
-#            tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
         mbs['_request_time_premean'][tags] += row['request_time']
 
-#    mbs['status']:
-#        tags: vhost, protocol, loc,  status
-#        value: count
-#
         tags = (bucket, row['vhost'], row['protocol'], row['loctag'], row['status'])
         mbs['status'][tags] += 1
-
-##### upstreams
 
         if 'upstreams' in row:
             tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
             mbs['hits_with_upstream'][tags] += 1
 
-#    mbs['upstreams_hits']:
-#        tags: vhost, protocol, loc, upstream
-#        value: count
-#
             for upstream in row['upstreams']['servers']:
                 tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
                 mbs['upstreams_hits'][tags] += 1
-
-#    mbs['upstreams_response_time']:
-#        tags: vhost, protocol, loc, upstream
-#        value: sum of response_time / hits
-
-           # for upstream in row['upstreams']['servers']:
-          #      tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
                 mbs['_upstreams_response_time_premean'][tags] += row['upstreams']['response_time'][upstream]
-
-#
-#    mbs['upstreams_connect_time']:
-#        tags: vhost, protocol, loc, upstream
-#        value: sum of connect_time / hits
-#
-          #  for upstream in row['upstreams']['servers']:
-           #     tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
                 mbs['_upstreams_connect_time_premean'][tags] += row['upstreams']['connect_time'][upstream]
-
-
-#    mbs['upstreams_header_time']:
-#        tags: vhost, protocol, loc, upstream
-#        value: sum of header_time / hits
-          #  for upstream in row['upstreams']['servers']:
-           #     tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
                 mbs['_upstreams_header_time_premean'][tags] += row['upstreams']['header_time'][upstream]
-
-
-#    mbs['upstreams_status']:
-#        tags: vhost, protocol, loc, upstream, status
-#        value: count
-            #for upstream in row['upstreams']['servers']:
                 for status in row['upstreams']['status'][upstream]:
                     tags = (bucket, row['vhost'], row['protocol'], row['loctag'],
                             upstream, status)
                     mbs['upstreams_status'][tags] += 1
 
-#
-#    mbs['upstreams_servers_contacted']:
-#        tags: vhost, protocol, loc
-#        value: sum of servers_contacted
-#
             tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
             mbs['upstreams_servers_contacted'][tags] += row['upstreams']['servers_contacted']
-
-
-#    mbs['upstream_internal_redirects']:
-#        tags: vhost, protocol, loc
-#        value: sum of internal_redirects
-#
-#                tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
             mbs['upstreams_internal_redirects'][tags] += row['upstreams']['internal_redirects']
-
-#    mbs['upstreams_servers_count']:
-#        tags: vhost, protocol, loc
-#        value: sum of len of servers
-#
-#                tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
             mbs['upstreams_servers'][tags] += len(row['upstreams']['servers'])
-
 
 # bucket processed, remove it
     del storage[bucket]
 
 
 def mbspostprocess(mbs):
-###### calculations of means
-
-# gzip_ratio_mean
     if mbs['gzip_count']:
         for k, v in mbs['_gzip_ratio_premean'].items():
             mbs['gzip_ratio_mean'][k] = v / mbs['gzip_count'][k]
 
     if mbs['hits']:
-        # mbs['request_length_mean']
         for k, v in mbs['_request_length_premean'].items():
             mbs['request_length_mean'][k] = v / mbs['hits'][k]
 
-        # mbs['request_time_mean']
         for k, v in mbs['_request_time_premean'].items():
             mbs['request_time_mean'][k] = v / mbs['hits'][k]
 
@@ -447,17 +352,15 @@ def mbspostprocess(mbs):
                 mbs['gzip_percent'][k] = 0.0
 
     if mbs['upstreams_hits']:
-        # mbs['upstreams_response_time_mean']
         for k, v in mbs['_upstreams_response_time_premean'].items():
             mbs['upstreams_response_time_mean'][k] = v / mbs['upstreams_hits'][k]
 
-        # mbs['upstreams_connect_time_mean']
         for k, v in mbs['_upstreams_connect_time_premean'].items():
             mbs['upstreams_connect_time_mean'][k] = v / mbs['upstreams_hits'][k]
 
-        # mbs['upstreams_header_time_mean']
         for k, v in mbs['_upstreams_header_time_premean'].items():
             mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
+
 
 
 def save_obj(obj, filepath):
