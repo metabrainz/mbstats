@@ -203,7 +203,8 @@ def parsefile(tailer, status, options):
         previous_leftover = status['leftover']
         for bucket in previous_leftover:
             storage[bucket] = previous_leftover[bucket]
-            logger.info("Previous leftover bucket: %s %d" % (bucket2time(bucket, status), len(previous_leftover[bucket])))
+            if options.quiet < 2:
+                logger.info("Previous leftover bucket: %s %d" % (bucket2time(bucket, status), len(previous_leftover[bucket])))
 
     for line in tailer:
         try:
@@ -244,6 +245,8 @@ def parsefile(tailer, status, options):
             ready_to_process = bucket - lookback_factor
 
             if ready_to_process in storage:
+                if options.quiet < 2:
+                    logger.info("Processing bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
                 process_bucket(ready_to_process, storage, status, mbs)
         except ValueError as e:
             logger.error(str(e), line)
@@ -252,14 +255,16 @@ def parsefile(tailer, status, options):
         max_lines -= 1
         if max_lines == 0:
             break
-    if skipped:
+    if skipped and options.quiet < 2:
         logger.info("Skipped %d unordered lines" % skipped)
     tailer._update_offset_file()
     last_bucket = bucket
     for bucket in storage:
-         logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
-         if bucket < last_bucket - lookback_factor:
-            logger.info("Removing old bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
+        if options.quiet < 2:
+            logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
+        if bucket < last_bucket - lookback_factor:
+            if options.quiet < 2:
+                logger.info("Removing old bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
             del storage[bucket]
     mbspostprocess(mbs)
     return (mbs, storage, last_msec)
@@ -296,8 +301,6 @@ def mbsdict():
 
 
 def process_bucket(bucket, storage, status, mbs):
-    logger.info("Processing bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
-
     for row in storage[bucket]:
         tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
         mbs['hits'][tags] += 1
@@ -431,7 +434,8 @@ def influxdb_client(options):
 def influxdb_send(client, points, tags, options):
     npoints = len(points)
     if npoints:
-        logger.info("Sending %d points" % npoints)
+        if options.quiet < 2:
+            logger.info("Sending %d points" % npoints)
         logger.debug(points[0])
         if options.dry_run:
             logger.debug("Dry run")
@@ -604,16 +608,17 @@ Note: first field in stats format declaration is a format version, it should be 
 """
 
 defaults = {
-    'file': '',
-    'max_lines': 0,
-    'workdir': '.',
-    'hostname': platform.node(),
-    'name': '',
-    'datacenter': '',
-    'log_dir': '',
-    'log_conf': None,
-    'dry_run': False,
     'config': [],
+    'datacenter': '',
+    'dry_run': False,
+    'file': '',
+    'hostname': platform.node(),
+    'log_conf': None,
+    'log_dir': '',
+    'max_lines': 0,
+    'name': '',
+    'quiet': 0,
+    'workdir': '.',
 
     'influx_host': 'localhost',
     'influx_port': 8086,
@@ -673,7 +678,9 @@ common.add_argument('-m', '--max-lines', type=int,
 common.add_argument('-w', '--workdir',
                    help="directory where offset/status are stored")
 common.add_argument('-y', '--dry-run', action='store_true',
-                    help='Parse the log file but send stats to standard output.')
+                    help='Parse the log file but send stats to standard output')
+common.add_argument('-q', '--quiet', action='count',
+                    help='Reduce verbosity / quiet mode')
 
 influx = parser.add_argument_group('influxdb arguments')
 influx.add_argument('--influx-host',
@@ -747,8 +754,10 @@ if (options.log_conf):
 if (options.debug):
     logger.setLevel(logging.DEBUG)
 
-logger.info("Starting with options %r", vars(options))
-
+if not options.quiet:
+    logger.info("Starting with options %r", vars(options))
+elif options.quiet == 1:
+    logger.info("Starting")
 
 filename = options.file
 if not filename:
@@ -853,8 +862,9 @@ try:
 
     save_obj(status, files['status'].tmp)
 except KeyboardInterrupt:
-    print("Exiting...")
-    logger.info("Exiting on keyboard interrupt")
+    if options.quiet < 2:
+        print("Exiting...")
+        logger.info("Exiting on keyboard interrupt")
     cleanup()
 except Exception as e:
     logger.error(str(e))
