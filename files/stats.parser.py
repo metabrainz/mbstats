@@ -119,6 +119,7 @@ mbs_tags = {
     'upstreams_servers_contacted': ('vhost', 'protocol', 'loctag'),
     'upstreams_servers_contacted_per_hit': ('vhost', 'protocol', 'loctag'),
     'upstreams_internal_redirects': ('vhost', 'protocol', 'loctag'),
+    'upstreams_internal_redirects_per_hit': ('vhost', 'protocol', 'loctag'),
     'upstreams_servers': ('vhost', 'protocol', 'loctag'),
     'upstreams_response_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
     'upstreams_connect_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
@@ -284,6 +285,7 @@ def mbsdict():
         '_upstreams_header_time_premean': defaultdict(float),
         'upstreams_hits': defaultdict(int),
         'upstreams_internal_redirects': defaultdict(int),
+        'upstreams_internal_redirects_per_hit': defaultdict(int),
         'upstreams_response_time_mean': defaultdict(float),
         '_upstreams_response_time_premean': defaultdict(float),
         'upstreams_servers_contacted': defaultdict(int),
@@ -367,6 +369,8 @@ def mbspostprocess(mbs):
         for k, v in mbs['upstreams_servers_contacted'].items():
             mbs['upstreams_servers_contacted_per_hit'][k] = float(v) / mbs['hits_with_upstream'][k]
 
+        for k, v in mbs['upstreams_internal_redirects'].items():
+            mbs['upstreams_internal_redirects_per_hit'][k] = float(v) / mbs['hits_with_upstream'][k]
 
 def save_obj(obj, filepath):
     with open(filepath, 'wb') as f:
