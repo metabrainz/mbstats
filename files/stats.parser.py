@@ -106,6 +106,7 @@ pos_upstream_header_time = 14
 
 mbs_tags = {
     'hits': ('vhost', 'protocol', 'loctag'),
+    'hits_with_upstream': ('vhost', 'protocol', 'loctag'),
     'status': ('vhost', 'protocol', 'loctag', 'status'),
     'bytes_sent': ('vhost', 'protocol', 'loctag'),
     'gzip_count': ('vhost', 'protocol', 'loctag'),
@@ -270,6 +271,7 @@ def mbsdict():
         'gzip_ratio_mean': defaultdict(float),
         '_gzip_ratio_premean': defaultdict(float),
         'hits': defaultdict(int),
+        'hits_with_upstream': defaultdict(int),
         'request_length_mean': defaultdict(float),
         '_request_length_premean': defaultdict(int),
         'request_time_mean': defaultdict(float),
@@ -347,6 +349,8 @@ def process_bucket(bucket, storage, status, mbs):
 ##### upstreams
 
         if 'upstreams' in row:
+            tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
+            mbs['hits_with_upstream'][tags] += 1
 
 #    mbs['upstreams_hits']:
 #        tags: vhost, protocol, loc, upstream
