@@ -110,7 +110,7 @@ mbs_tags = {
     'status': ('vhost', 'protocol', 'loctag', 'status'),
     'bytes_sent': ('vhost', 'protocol', 'loctag'),
     'gzip_count': ('vhost', 'protocol', 'loctag'),
-    'gzip_percent': ('vhost', 'protocol', 'loctag'),
+    'gzip_count_percent': ('vhost', 'protocol', 'loctag'),
     'gzip_ratio_mean': ('vhost', 'protocol', 'loctag'),
     'request_length_mean': ('vhost', 'protocol', 'loctag'),
     'request_time_mean': ('vhost', 'protocol', 'loctag'),
@@ -267,7 +267,7 @@ def mbsdict():
     return {
         'bytes_sent': defaultdict(int),
         'gzip_count': defaultdict(int),
-        'gzip_percent': defaultdict(float),
+        'gzip_count_percent': defaultdict(float),
         'gzip_ratio_mean': defaultdict(float),
         '_gzip_ratio_premean': defaultdict(float),
         'hits': defaultdict(int),
@@ -348,9 +348,9 @@ def mbspostprocess(mbs):
 
         for k, v in mbs['hits'].items():
             if mbs['gzip_count'] and v:
-                mbs['gzip_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
+                mbs['gzip_count_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
             else:
-                mbs['gzip_percent'][k] = 0.0
+                mbs['gzip_count_percent'][k] = 0.0
 
     if mbs['upstreams_hits']:
         for k, v in mbs['_upstreams_response_time_premean'].items():
