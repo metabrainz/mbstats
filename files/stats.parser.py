@@ -313,21 +313,22 @@ def process_bucket(bucket, storage, status, mbs):
             tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
             mbs['hits_with_upstream'][tags] += 1
 
-            for upstream in row['upstreams']['servers']:
+            ru = row['upstreams']
+            for upstream in ru['servers']:
                 tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
                 mbs['upstreams_hits'][tags] += 1
-                mbs['_upstreams_response_time_premean'][tags] += row['upstreams']['response_time'][upstream]
-                mbs['_upstreams_connect_time_premean'][tags] += row['upstreams']['connect_time'][upstream]
-                mbs['_upstreams_header_time_premean'][tags] += row['upstreams']['header_time'][upstream]
-                for status in row['upstreams']['status'][upstream]:
+                mbs['_upstreams_response_time_premean'][tags] += ru['response_time'][upstream]
+                mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][upstream]
+                mbs['_upstreams_header_time_premean'][tags] += ru['header_time'][upstream]
+                for status in ru['status'][upstream]:
                     tags = (bucket, row['vhost'], row['protocol'], row['loctag'],
                             upstream, status)
                     mbs['upstreams_status'][tags] += 1
 
             tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
-            mbs['upstreams_servers_contacted'][tags] += row['upstreams']['servers_contacted']
-            mbs['upstreams_internal_redirects'][tags] += row['upstreams']['internal_redirects']
-            mbs['upstreams_servers'][tags] += len(row['upstreams']['servers'])
+            mbs['upstreams_servers_contacted'][tags] += ru['servers_contacted']
+            mbs['upstreams_internal_redirects'][tags] += ru['internal_redirects']
+            mbs['upstreams_servers'][tags] += len(ru['servers'])
 
 # bucket processed, remove it
     del storage[bucket]
