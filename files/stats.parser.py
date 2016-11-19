@@ -45,7 +45,9 @@
 
 from collections import defaultdict
 from influxdb import InfluxDBClient
+from math import floor
 from pygtail import Pygtail
+from time import time
 import argparse
 try:
     import cPickle as pickle
@@ -54,6 +56,7 @@ except:
 import csv
 import datetime
 import gzip
+import inspect
 import itertools
 import json
 import math
@@ -64,8 +67,10 @@ import platform
 import re
 import shutil
 import sys
+import traceback
 
 
+script_start_time = time()
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
 fieldnames = [
@@ -132,6 +137,14 @@ types = defaultdict(factory)
 types['upstream_status'] = lambda x: int(x)
 types['upstream_response_time'] = types['upstream_connect_time'] = types['upstream_header_time'] = lambda x: float(x)
 
+## This provides a lineno() function to make it easy to grab the line
+## number that we're on (for logging)
+## Danny Yoo (dyoo@hkn.eecs.berkeley.edu)
+## taken from http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/145297
+def lineno():
+    """Returns the current line number in our program."""
+    return inspect.currentframe().f_back.f_lineno
+
 #@profile
 def parse_upstreams(row):
     #servers were contacted ", "
@@ -186,6 +199,7 @@ def parse_upstreams(row):
 
 
 def parsefile(tailer, status, options):
+    parsed_lines = 0
     max_lines = options.max_lines
     bucket_duration = status['bucket_duration']
     lookback_factor = status['lookback_factor']
@@ -252,8 +266,8 @@ def parsefile(tailer, status, options):
             logger.error(str(e), line)
             logger.error(row)
             raise
-        max_lines -= 1
-        if max_lines == 0:
+        parsed_lines += 1
+        if parsed_lines == max_lines:
             break
     if skipped and options.quiet < 2:
         logger.info("Skipped %d unordered lines" % skipped)
@@ -267,7 +281,7 @@ def parsefile(tailer, status, options):
                 logger.info("Removing old bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
             del storage[bucket]
     mbspostprocess(mbs)
-    return (mbs, storage, last_msec)
+    return (mbs, storage, last_msec, parsed_lines)
 
 
 def mbsdict():
@@ -810,6 +824,7 @@ def finalize():
         cleanup()
         raise
 
+parsed_lines = 0
 res = False
 try:
     influxdb = influxdb_client(options)
@@ -846,7 +861,7 @@ try:
             print(msg)
             sys.exit(1)
 
-    mbs, leftover, last_msec = parsefile(pygtail, status, options)
+    mbs, leftover, last_msec, parsed_lines = parsefile(pygtail, status, options)
     status['leftover'] = leftover
     status['last_msec'] = last_msec
 
@@ -863,17 +878,36 @@ try:
     save_obj(status, files['status'].tmp)
 except KeyboardInterrupt:
     if options.quiet < 2:
-        print("Exiting...")
-        logger.info("Exiting on keyboard interrupt")
+        msg = "Exiting on keyboard interrupt"
+        print(msg)
+        logger.info(msg)
     cleanup()
-except Exception as e:
-    logger.error(str(e))
-    cleanup()
+    retcode = 1
+except SystemExit as e:
     raise
+except Exception as e:
+    msg = "Exception caught at %s: %s" % (lineno(), e)
+    print(msg)
+    traceback.print_exc()
+    logger.error(msg)
+    cleanup()
+    retcode = 1
 else:
     finalize()
-finally:
-    try:
-        end_locking(lockfile, files['lock'].main)
-    except:
-        pass
+    retcode = 0
+
+if options.quiet < 2:
+    # Log the execution time
+    exec_time = round(time() - script_start_time, 1)
+    logger.info("Total execution time: %s seconds. "
+                "Parsed lines: %d. "
+                "Mean time per line: %0.3f microseconds" %
+                (exec_time, parsed_lines, 1000000.0 * (exec_time / parsed_lines)))
+
+
+try:
+    end_locking(lockfile, files['lock'].main)
+except:
+    pass
+
+sys.exit(retcode)
