@@ -28,3 +28,8 @@ for i in $(seq 1 10); do
 	$CMD -m 70000;
 done
 $CMD -m 2000000;
+
+# simulate a log rotation
+mv $STATSLOG $STATSLOG.1
+head -5500000 $STATSLOG_SOURCE | tail -500000 > $STATSLOG
+$CMD -m 200000;
