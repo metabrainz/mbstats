@@ -630,6 +630,7 @@ defaults = {
     'startover': False,
     'ignore_first_run': False,
     'bucket_duration': 60,
+    'syslog': False,
 }
 conf_parser = argparse.ArgumentParser(add_help=False)
 conf_parser.add_argument("-c", "--config", help="Specify json config file(s)",
@@ -710,7 +711,8 @@ expert.add_argument('--log-conf', action='store',
                     help='Logging configuration file. None by default')
 expert.add_argument('--dump-config', action='store_true',
                    help="dump config as json to stdout")
-
+expert.add_argument('--syslog', action='store_true',
+                    help="Log to syslog")
 
 options = parser.parse_args(remaining_argv)
 if options.dump_config:
@@ -722,14 +724,20 @@ log_dir = options.log_dir
 if not log_dir:
     log_dir = options.workdir
 
-# Logging infrastructure for use throughout the script.
-# Uses appending log file, rotated at 100 MB, keeping 5.
-if (not os.path.isdir(log_dir)):
-    os.mkdir(log_dir)
 logger = logging.getLogger('stats.parser')
-formatter = logging.Formatter('%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
-hdlr = logging.handlers.RotatingFileHandler('%s/stats.parser.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
-hdlr.setFormatter(formatter)
+if options.syslog:
+    hdlr = logging.handlers.SysLogHandler(address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_SYSLOG)
+    formatter = logging.Formatter('%(name)s: %(message)s')
+    hdlr.setFormatter(formatter)
+else:
+    # Logging infrastructure for use throughout the script.
+    # Uses appending log file, rotated at 100 MB, keeping 5.
+    if (not os.path.isdir(log_dir)):
+        os.mkdir(log_dir)
+    formatter = logging.Formatter('%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
+    hdlr = logging.handlers.RotatingFileHandler('%s/stats.parser.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
+    hdlr.setFormatter(formatter)
+
 logger.addHandler(hdlr)
 logger.setLevel(logging.INFO)
 
