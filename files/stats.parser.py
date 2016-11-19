@@ -556,6 +556,9 @@ class SafeFile(object):
             pass
 
 
+def read_config(conf_path):
+    with open(conf_path, 'r') as f:
+        return json.load(f)
 
 
 description= \
@@ -599,64 +602,120 @@ In addition of your usual access log, add something like:
 Note: first field in stats format declaration is a format version, it should be set to 1.
 
 """
-parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
+
+defaults = {
+    'file': '',
+    'max_lines': 0,
+    'workdir': '.',
+    'hostname': platform.node(),
+    'name': '',
+    'datacenter': '',
+    'log_dir': '',
+    'log_conf': None,
+    'dry_run': False,
+    'config': [],
+
+    'influx_host': 'localhost',
+    'influx_port': 8086,
+    'influx_username': 'root',
+    'influx_password': 'root',
+    'influx_database': 'mbstats',
+    'influx_timeout': 40,
+    'influx_batch_size': 500,
+
+    'debug': False,
+    'influx_drop_database': False,
+    'locker': 'fcntl',
+    'lookback_factor': 2,
+    'startover': False,
+    'ignore_first_run': False,
+    'bucket_duration': 60,
+}
+conf_parser = argparse.ArgumentParser(add_help=False)
+conf_parser.add_argument("-c", "--config", help="Specify json config file(s)",
+                         action='append', metavar="FILE")
+args, remaining_argv = conf_parser.parse_known_args()
+
+if args.config:
+    for conf_path in args.config:
+        defaults['config'].append(conf_path)
+        config = read_config(conf_path)
+        for k in config:
+            if k not in defaults:
+                continue
+            if k == 'config':
+                continue
+            defaults[k] = config[k]
+
+parser = argparse.ArgumentParser(description=description, epilog=epilog,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 parents=[conf_parser], conflict_handler='resolve')
+parser.set_defaults(**defaults)
 
 required = parser.add_argument_group('required arguments')
-required.add_argument('-f', '--file', help="log file to process")
+required.add_argument('-f', '--file',
+                      help="log file to process")
 
 common = parser.add_argument_group('common arguments')
-common.add_argument('-m', '--max-lines', default=0, type=int,
-                    help="maximum number of lines to process")
-common.add_argument('-w', '--workdir', default='.',
-                   help="directory where offset/status are stored")
-common.add_argument('-H', '--hostname', default=platform.node(),
-                   help="string to use as 'host' tag")
-common.add_argument('-n', '--name', default='',
-                   help="string to use as 'name' tag")
-common.add_argument('-d', '--datacenter', default='',
+common.add_argument('-c', '--config', action='append', metavar='FILE',
+                    help="Specify json config file(s)")
+common.add_argument('-d', '--datacenter',
                    help="string to use as 'dc' tag")
-common.add_argument('-l', '--log-dir', action='store', default='',
+common.add_argument('-H', '--hostname',
+                   help="string to use as 'host' tag")
+common.add_argument('-l', '--log-dir', action='store',
                     help='Where to store the stats.parser logfile.  Default location is workdir')
-common.add_argument('--log-conf', action='store', default=None,
-                    help='Logging configuration file. None by default')
-common.add_argument('--dry-run', '-y', action='store_true', default=False,
+common.add_argument('-n', '--name',
+                   help="string to use as 'name' tag")
+common.add_argument('-m', '--max-lines', type=int,
+                    help="maximum number of lines to process")
+common.add_argument('-w', '--workdir',
+                   help="directory where offset/status are stored")
+common.add_argument('-y', '--dry-run', action='store_true',
                     help='Parse the log file but send stats to standard output.')
 
 influx = parser.add_argument_group('influxdb arguments')
-influx.add_argument('--influx-host', default='localhost',
+influx.add_argument('--influx-host',
                    help="influxdb host")
-influx.add_argument('--influx-port', default=8086, type=int,
+influx.add_argument('--influx-port', type=int,
                    help="influxdb port")
-influx.add_argument('--influx-username', default='root',
+influx.add_argument('--influx-username',
                    help="influxdb username")
-influx.add_argument('--influx-password', default='root',
+influx.add_argument('--influx-password',
                    help="influxdb password")
-influx.add_argument('--influx-database', default='mbstats',
+influx.add_argument('--influx-database',
                    help="influxdb database")
-influx.add_argument('--influx-timeout', default=40, type=int,
+influx.add_argument('--influx-timeout', type=int,
                    help="influxdb timeout")
-influx.add_argument('--influx-batch-size', default=500, type=int,
+influx.add_argument('--influx-batch-size', type=int,
                    help="number of points to send per batch")
 
 expert = parser.add_argument_group('expert arguments')
-expert.add_argument('-D', '--debug', action='store_true', default=False,
+expert.add_argument('-D', '--debug', action='store_true',
                     help="Enable debug mode")
-expert.add_argument('--influx-drop-database', action='store_true', default=False,
+expert.add_argument('--influx-drop-database', action='store_true',
                    help="drop existing InfluxDB database, use with care")
 expert.add_argument('--locker', choices=('fcntl', 'portalocker'),
-                    default='fcntl',
+
                     help="type of lock to use")
-expert.add_argument('--lookback-factor', type=int, default=2,
+expert.add_argument('--lookback-factor', type=int,
                    help="number of buckets to wait before sending any data")
-expert.add_argument('--startover', action='store_true', default=False,
+expert.add_argument('--startover', action='store_true',
                    help="ignore all status/offset, like a first run")
-expert.add_argument('--ignore-first-run', action='store_true', default=False,
+expert.add_argument('--ignore-first-run', action='store_true',
                    help="do not skip to end on first run")
-expert.add_argument('--bucket-duration', type=int, default=60,
+expert.add_argument('--bucket-duration', type=int,
                    help="duration for each bucket in seconds")
+expert.add_argument('--log-conf', action='store',
+                    help='Logging configuration file. None by default')
+expert.add_argument('--dump-config', action='store_true',
+                   help="dump config as json to stdout")
 
 
-options = parser.parse_args()
+options = parser.parse_args(remaining_argv)
+if options.dump_config:
+    print(json.dumps(vars(options), indent=4, sort_keys=True))
+    sys.exit(0)
 #print(options)
 
 log_dir = options.log_dir
