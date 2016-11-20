@@ -23,11 +23,17 @@ $CMD -m 1000 --influx-drop-database --startover;
 ! $CMD -m 1000 --bucket-duration 30 && echo "Testing exit on change of bucket duration, SUCCESS"
 #test change of lookback factor, must fail (hence the !)
 ! $CMD -m 1000 --lookback-factor 3 && echo "Testing exit on change of lookback factor, SUCCESS"
+
 $CMD -m 300000;
 
-for i in $(seq 1 10); do
+for i in $(seq 1 5); do
+	$CMD -m 70000 --simulate-send-failure;
+done
+
+for i in $(seq 1 5); do
 	$CMD -m 70000;
 done
+
 $CMD -m 2000000;
 
 # simulate a log rotation

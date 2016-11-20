@@ -697,6 +697,8 @@ defaults = {
     'influx_drop_database': False,
     'locker': 'fcntl',
     'lookback_factor': 2,
+    'send_failure_fifo_size': 30,
+    'simulate_send_failure': False,
     'startover': False,
     'syslog': False,
 }
@@ -783,6 +785,10 @@ expert.add_argument('--dump-config', action='store_true',
                    help="dump config as json to stdout")
 expert.add_argument('--syslog', action='store_true',
                     help="Log to syslog")
+expert.add_argument('--send-failure-fifo-size', type=int,
+                    help="Number of failed sends to backup")
+expert.add_argument('--simulate-send-failure', action='store_true',
+                    help="Simulate send failure for testing purposes")
 
 options = parser.parse_args(remaining_argv)
 if options.dump_config:
@@ -884,11 +890,23 @@ try:
     except IOError:
         status = {}
 
+    save = False
     if not 'last_msec' in status:
         status['last_msec'] = 0
+        save = True
+    if not 'leftover' in status:
         status['leftover'] = None
+        save = True
+    if not 'bucket_duration' in status:
         status['bucket_duration'] = options.bucket_duration
+        save = True
+    if not 'lookback_factor' in status:
         status['lookback_factor'] = options.lookback_factor
+        save = True
+    if not 'saved_points' in status:
+        status['saved_points'] = deque([], options.send_failure_fifo_size)
+        save = True
+    if save:
         save_obj(status, files['status'].tmp)
 
     if (status['leftover'] is not None and len(status['leftover']) > 0):
@@ -913,14 +931,49 @@ try:
     status['last_msec'] = last_msec
 
     points = mbs2influx(mbs, status)
-    if points:
+    if points or status['saved_points']:
         tags = {
             'host': options.hostname,
             'name': options.name or filename,
         }
         if options.datacenter:
             tags['dc'] = options.datacenter
-        influxdb_send(influxdb, points, tags, options)
+
+        if status['saved_points']:
+            to_resend = list()
+            for savedpoints in status['saved_points']:
+                to_resend += savedpoints
+            try:
+                logger.info("Trying to send %d saved points" %
+                            len(to_resend))
+                if options.simulate_send_failure:
+                    raise Exception('Simulating send failure (resend)')
+                if influxdb_send(influxdb, to_resend, tags, options):
+                    status['saved_points'].clear()
+            except Exception as e:
+                msg = "Influx send failed again: %s: %s" % (lineno(), e)
+                print(msg)
+                traceback.print_exc()
+                logger.error(msg)
+                pass
+
+        if points:
+            try:
+                if options.simulate_send_failure:
+                    raise Exception('Simulating send failure')
+                ret = influxdb_send(influxdb, points, tags, options)
+                if not ret:
+                    raise Exception('influx_send failed')
+            except Exception as e:
+                msg = "Influx send: Exception caught at %s: %s" % (lineno(), e)
+                print(msg)
+                traceback.print_exc()
+                logger.error(msg)
+                status['saved_points'].append(points)
+                logger.info("Failed to send, saving points for later %d/%d" %
+                            (len(status['saved_points']),
+                             options.send_failure_fifo_size))
+                pass
 
     save_obj(status, files['status'].tmp)
 except KeyboardInterrupt:
