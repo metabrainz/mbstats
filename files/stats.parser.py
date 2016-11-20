@@ -121,9 +121,7 @@ mbs_tags = {
     'request_time_mean': ('vhost', 'protocol', 'loctag'),
     'upstreams_hits': ('vhost', 'protocol', 'loctag', 'upstream'),
     'upstreams_status': ('vhost', 'protocol', 'loctag', 'upstream', 'status'),
-    'upstreams_servers_contacted': ('vhost', 'protocol', 'loctag'),
     'upstreams_servers_contacted_per_hit': ('vhost', 'protocol', 'loctag'),
-    'upstreams_internal_redirects': ('vhost', 'protocol', 'loctag'),
     'upstreams_internal_redirects_per_hit': ('vhost', 'protocol', 'loctag'),
     'upstreams_servers': ('vhost', 'protocol', 'loctag'),
     'upstreams_response_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
@@ -354,11 +352,11 @@ def mbsdict():
         'upstreams_header_time_mean': defaultdict(float),
         '_upstreams_header_time_premean': defaultdict(float),
         'upstreams_hits': defaultdict(int),
-        'upstreams_internal_redirects': defaultdict(int),
+        '_upstreams_internal_redirects': defaultdict(int),
         'upstreams_internal_redirects_per_hit': defaultdict(int),
         'upstreams_response_time_mean': defaultdict(float),
         '_upstreams_response_time_premean': defaultdict(float),
-        'upstreams_servers_contacted': defaultdict(int),
+        '_upstreams_servers_contacted': defaultdict(int),
         'upstreams_servers_contacted_per_hit': defaultdict(float),
         'upstreams_servers': defaultdict(int),
         'upstreams_status': defaultdict(int),
@@ -389,8 +387,8 @@ def process_bucket(bucket, storage, status, mbs):
 
                 tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
                 mbs['hits_with_upstream'][tags] += 1
-                mbs['upstreams_servers_contacted'][tags] += ru['servers_contacted']
-                mbs['upstreams_internal_redirects'][tags] += ru['internal_redirects']
+                mbs['_upstreams_servers_contacted'][tags] += ru['servers_contacted']
+                mbs['_upstreams_internal_redirects'][tags] += ru['internal_redirects']
                 mbs['upstreams_servers'][tags] += len(ru['servers'])
                 for upstream in ru['servers']:
                     tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
@@ -434,10 +432,10 @@ def mbspostprocess(mbs):
         for k, v in mbs['_upstreams_header_time_premean'].items():
             mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
 
-        for k, v in mbs['upstreams_servers_contacted'].items():
+        for k, v in mbs['_upstreams_servers_contacted'].items():
             mbs['upstreams_servers_contacted_per_hit'][k] = float(v) / mbs['hits_with_upstream'][k]
 
-        for k, v in mbs['upstreams_internal_redirects'].items():
+        for k, v in mbs['_upstreams_internal_redirects'].items():
             mbs['upstreams_internal_redirects_per_hit'][k] = float(v) / mbs['hits_with_upstream'][k]
 
 def save_obj(obj, filepath):
