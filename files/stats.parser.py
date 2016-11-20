@@ -817,12 +817,8 @@ def cleanup():
     end_locking(lockfile, files['lock'].main)
 
 def finalize():
-    try:
-        files['offset'].tmp2main()
-        files['status'].tmp2main()
-    except:
-        cleanup()
-        raise
+    files['offset'].tmp2main()
+    files['status'].tmp2main()
 
 parsed_lines = 0
 res = False
@@ -881,7 +877,6 @@ except KeyboardInterrupt:
         msg = "Exiting on keyboard interrupt"
         print(msg)
         logger.info(msg)
-    cleanup()
     retcode = 1
 except SystemExit as e:
     raise
@@ -890,11 +885,12 @@ except Exception as e:
     print(msg)
     traceback.print_exc()
     logger.error(msg)
-    cleanup()
     retcode = 1
 else:
     finalize()
     retcode = 0
+finally:
+    cleanup()
 
 if options.quiet < 2:
     # Log the execution time
