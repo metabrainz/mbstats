@@ -251,9 +251,10 @@ def parsefile(tailer, status, options):
                     raise ParseEnd
         except ParseEnd:
             pass
-
+        # ensure we start on an entire bucket, so values are correct
+        last_msec = (bucket+lookback_factor) * bucket_duration
         skipped_lines = parsed_lines
-        logger.debug("End of first run: bucket=%d last_msec=%f skipped=%d" %
+        logger.info("End of first run: bucket=%d last_msec=%f skipped=%d" %
                      (bucket, last_msec, skipped_lines))
     else:
         try:
