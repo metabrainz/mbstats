@@ -43,7 +43,7 @@
 ###
 
 
-from collections import defaultdict
+from collections import (defaultdict, deque)
 from influxdb import InfluxDBClient
 from math import floor
 from pygtail import Pygtail
@@ -197,112 +197,141 @@ def parse_upstreams(row):
         r['header_time'][k] += float(item[4])
     return r
 
+class ParseEnd(Exception):
+    pass
+
+class ParseSkip(Exception):
+    pass
 
 def parsefile(tailer, status, options):
     parsed_lines = 0
     skipped_lines = 0
-    first_run = (status['last_msec'] == 0)
+    first_run = False
     max_lines = options.max_lines
     bucket_duration = status['bucket_duration']
     lookback_factor = status['lookback_factor']
     mbs = mbsdict()
     # lines are logged when request ends, which means they can be unordered
-    if first_run:
+    if not status['last_msec']:
         ignore_before = 0
-        logger.info("First run")
     else:
         ignore_before = status['last_msec'] - bucket_duration * lookback_factor
+    logger.debug(
+        "max_lines=%d bucket_duration=%d lookback_factor=%d ignore_before=%f" %
+        (max_lines, bucket_duration, lookback_factor, ignore_before))
     last_msec = 0
     last_bucket = 0
-    storage = defaultdict(list)
     if status['leftover'] is not None:
-        previous_leftover = status['leftover']
-        for bucket in previous_leftover:
-            storage[bucket] = previous_leftover[bucket]
-            if options.quiet < 2:
-                logger.info("Previous leftover bucket: %s %d" % (bucket2time(bucket, status), len(previous_leftover[bucket])))
-    bucket = 0
-    if first_run and not options.do_not_skip_to_end:
-        # code duplication here, intentional
-        for line in tailer:
-            try:
-                items = line.split('|', 2)
-                msec = float(items[pos_msec])
-                if msec > last_msec:
-                    last_msec = msec
-                bucket = int(math.ceil(msec/bucket_duration))
-            except ValueError as e:
-                logger.error(str(e), line)
-                raise
-            parsed_lines += 1
-        skipped_lines = parsed_lines
-        logger.debug("End of first run: bucket=%d last_msec=%f" % (bucket, last_msec))
+        logger.debug("Examining %d leftovers" % len(status['leftover']))
+        storage = status['leftover']
+        if options.quiet < 2:
+            for bucket in storage:
+                logger.info("Previous leftover bucket: %s %d" %
+                            (bucket2time(bucket, status), len(storage[bucket])))
     else:
-        for line in tailer:
-            try:
-                items = line.split('|')
-                msec = float(items[pos_msec])
-                if msec <= ignore_before:
-                    # skip unordered & old entries
+        storage = defaultdict(deque)
+        logger.info("First run")
+        first_run = not options.do_not_skip_to_end
+    bucket = 0
+    if first_run:
+        # code duplication here, intentional
+        try:
+            for line in tailer:
+                parsed_lines += 1
+                try:
+                    items = line.split('|', 2)
+                    msec = float(items[pos_msec])
+                    if msec > last_msec:
+                        last_msec = msec
+                    bucket = int(math.ceil(msec/bucket_duration))
+                except ValueError as e:
+                    logger.error(str(e), line)
+                    raise
+                if parsed_lines == max_lines:
+                    raise ParseEnd
+        except ParseEnd:
+            pass
+
+        skipped_lines = parsed_lines
+        logger.debug("End of first run: bucket=%d last_msec=%f skipped=%d" %
+                     (bucket, last_msec, skipped_lines))
+    else:
+        try:
+            for line in tailer:
+                parsed_lines += 1
+                try:
+                    items = line.split('|')
+                    msec = float(items[pos_msec])
+                    if msec <= ignore_before:
+                        # skip unordered & old entries
+                        raise ParseSkip
+                    if msec > last_msec:
+                        last_msec = msec
+                    bucket = int(math.ceil(msec/bucket_duration))
+
+                    row = {
+                        'vhost': items[pos_vhost],
+                        'protocol': items[pos_protocol],
+                        'loctag': items[pos_loctag],
+                        'status': int(items[pos_status]),
+                        'bytes_sent': int(items[pos_bytes_sent]),
+                        'request_length': int(items[pos_request_length]),
+                    }
+
+                    if items[pos_gzip_ratio] != '-':
+                        row['gzip_ratio'] = float(items[pos_gzip_ratio])
+                    if items[pos_request_time] != '-':
+                        row['request_time'] = float(items[pos_request_time])
+
+                    if items[pos_upstream_addr] != '-':
+                        # Note : last element contains trailing new line character
+                        # from readline()
+                        row['upstreams'] = parse_upstreams({
+                        'upstream_addr': items[pos_upstream_addr],
+                        'upstream_status': items[pos_upstream_status],
+                        'upstream_response_time': items[pos_upstream_response_time],
+                        'upstream_connect_time': items[pos_upstream_connect_time],
+                        'upstream_header_time': items[pos_upstream_header_time].rstrip('\r\n'),
+                        })
+
+                    storage[bucket].append(row)
+                    ready_to_process = bucket - lookback_factor
+
+                    if storage[ready_to_process]:
+                        if options.quiet < 2:
+                            logger.info("Processing bucket: %s %d" %
+                                        (bucket2time(ready_to_process, status),
+                                         len(storage[ready_to_process])))
+                        process_bucket(ready_to_process, storage, status, mbs)
+                except ParseSkip:
                     skipped_lines += 1
-                    continue
-                if msec > last_msec:
-                    last_msec = msec
-                bucket = int(math.ceil(msec/bucket_duration))
-
-                row = {
-                    'vhost': items[pos_vhost],
-                    'protocol': items[pos_protocol],
-                    'loctag': items[pos_loctag],
-                    'status': int(items[pos_status]),
-                    'bytes_sent': int(items[pos_bytes_sent]),
-                    'request_length': int(items[pos_request_length]),
-                }
-
-                if items[pos_gzip_ratio] != '-':
-                    row['gzip_ratio'] = float(items[pos_gzip_ratio])
-                if items[pos_request_time] != '-':
-                    row['request_time'] = float(items[pos_request_time])
-
-                if items[pos_upstream_addr] != '-':
-                    # Note : last element contains trailing new line character
-                    # from readline()
-                    row['upstreams'] = parse_upstreams({
-                    'upstream_addr': items[pos_upstream_addr],
-                    'upstream_status': items[pos_upstream_status],
-                    'upstream_response_time': items[pos_upstream_response_time],
-                    'upstream_connect_time': items[pos_upstream_connect_time],
-                    'upstream_header_time': items[pos_upstream_header_time].rstrip('\r\n'),
-                    })
-
-                storage[bucket].append(row)
-                ready_to_process = bucket - lookback_factor
-
-                if ready_to_process in storage:
-                    if options.quiet < 2:
-                        logger.info("Processing bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
-                    process_bucket(ready_to_process, storage, status, mbs)
-            except ValueError as e:
-                logger.error(str(e), line)
-                raise
-            parsed_lines += 1
-            if parsed_lines == max_lines:
-                break
-
+                    pass
+                except ValueError as e:
+                    logger.error(str(e), line)
+                    raise
+                if parsed_lines == max_lines:
+                    raise ParseEnd
+        except ParseEnd:
+            pass
         if skipped_lines and options.quiet < 2:
-            logger.info("Skipped %d unordered lines" % skipped)
+            logger.info("Skipped %d unordered lines" % skipped_lines)
 
     tailer._update_offset_file()
     last_bucket = bucket
+    leftover = defaultdict(deque)
     for bucket in storage:
-        if options.quiet < 2:
-            logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
-        if bucket < last_bucket - lookback_factor:
-            if options.quiet < 2:
-                logger.info("Removing old bucket: %s %d" % (bucket2time(bucket, status), len(storage[bucket])))
-            del storage[bucket]
+        if storage[bucket] and bucket >= last_bucket - lookback_factor:
+            leftover[bucket] = storage[bucket]
+
+    logger.debug("Leftovers %d" % len(leftover))
+    if options.quiet < 2:
+        for bucket in leftover:
+            logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket,
+                                                                   status),
+                                                       len(leftover[bucket])))
+
     mbspostprocess(mbs)
-    return (mbs, storage, last_msec, parsed_lines, skipped_lines)
+    return (mbs, leftover, last_msec, parsed_lines, skipped_lines)
 
 
 def mbsdict():
@@ -336,44 +365,44 @@ def mbsdict():
 
 
 def process_bucket(bucket, storage, status, mbs):
-    for row in storage[bucket]:
-        tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
-        mbs['hits'][tags] += 1
-        mbs['bytes_sent'][tags] += row['bytes_sent']
-
-        if 'gzip_ratio' in row:
-            mbs['gzip_count'][tags] += 1
-            mbs['_gzip_ratio_premean'][tags] += row['gzip_ratio']
-
-        mbs['_request_length_premean'][tags] += row['request_length']
-        mbs['_request_time_premean'][tags] += row['request_time']
-
-        tags = (bucket, row['vhost'], row['protocol'], row['loctag'], row['status'])
-        mbs['status'][tags] += 1
-
-        if 'upstreams' in row:
-            tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
-            mbs['hits_with_upstream'][tags] += 1
-
-            ru = row['upstreams']
-            for upstream in ru['servers']:
-                tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
-                mbs['upstreams_hits'][tags] += 1
-                mbs['_upstreams_response_time_premean'][tags] += ru['response_time'][upstream]
-                mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][upstream]
-                mbs['_upstreams_header_time_premean'][tags] += ru['header_time'][upstream]
-                for status in ru['status'][upstream]:
-                    tags = (bucket, row['vhost'], row['protocol'], row['loctag'],
-                            upstream, status)
-                    mbs['upstreams_status'][tags] += 1
+    while True:
+        try:
+            row = storage[bucket].pop()
 
             tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
-            mbs['upstreams_servers_contacted'][tags] += ru['servers_contacted']
-            mbs['upstreams_internal_redirects'][tags] += ru['internal_redirects']
-            mbs['upstreams_servers'][tags] += len(ru['servers'])
+            mbs['hits'][tags] += 1
+            mbs['bytes_sent'][tags] += row['bytes_sent']
 
-# bucket processed, remove it
-    del storage[bucket]
+            if 'gzip_ratio' in row:
+                mbs['gzip_count'][tags] += 1
+                mbs['_gzip_ratio_premean'][tags] += row['gzip_ratio']
+
+            mbs['_request_length_premean'][tags] += row['request_length']
+            mbs['_request_time_premean'][tags] += row['request_time']
+
+            tags = (bucket, row['vhost'], row['protocol'], row['loctag'], row['status'])
+            mbs['status'][tags] += 1
+
+            if 'upstreams' in row:
+                ru = row['upstreams']
+
+                tags = (bucket, row['vhost'], row['protocol'], row['loctag'])
+                mbs['hits_with_upstream'][tags] += 1
+                mbs['upstreams_servers_contacted'][tags] += ru['servers_contacted']
+                mbs['upstreams_internal_redirects'][tags] += ru['internal_redirects']
+                mbs['upstreams_servers'][tags] += len(ru['servers'])
+                for upstream in ru['servers']:
+                    tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
+                    mbs['upstreams_hits'][tags] += 1
+                    mbs['_upstreams_response_time_premean'][tags] += ru['response_time'][upstream]
+                    mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][upstream]
+                    mbs['_upstreams_header_time_premean'][tags] += ru['header_time'][upstream]
+                    for status in ru['status'][upstream]:
+                        tags = (bucket, row['vhost'], row['protocol'], row['loctag'],
+                                upstream, status)
+                        mbs['upstreams_status'][tags] += 1
+        except IndexError:
+            break
 
 
 def mbspostprocess(mbs):
@@ -842,6 +871,7 @@ if options.startover:
     files['status'].remove_main()
 
 parsed_lines = 0
+skipped_lines = 0
 res = False
 try:
     influxdb = influxdb_client(options)
@@ -860,6 +890,7 @@ try:
         status['leftover'] = None
         status['bucket_duration'] = options.bucket_duration
         status['lookback_factor'] = options.lookback_factor
+        save_obj(status, files['status'].tmp)
 
     if (status['leftover'] is not None and len(status['leftover']) > 0):
         exit = False
@@ -916,8 +947,12 @@ finally:
 if options.quiet < 2:
     # Log the execution time
     exec_time = round(time() - script_start_time, 1)
+    if parsed_lines:
+        mean_per_line = 1000000.0 * (exec_time / parsed_lines)
+    else:
+        mean_per_line = 0.0
     logger.info("duration=%ss parsed=%d skipped=%d mean_per_line=%0.3fµs" %
-                (exec_time, parsed_lines, skipped_lines, 1000000.0 * (exec_time / parsed_lines)))
+                (exec_time, parsed_lines, skipped_lines, mean_per_line))
 
 
 try:
