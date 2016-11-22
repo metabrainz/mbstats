@@ -305,8 +305,8 @@ def parsefile(tailer, status, options):
                 except ParseSkip:
                     skipped_lines += 1
                     pass
-                except ValueError as e:
-                    logger.error(str(e), line)
+                except Exception as e:
+                    logger.error("%s: %s", line)
                     raise
                 if parsed_lines == max_lines:
                     raise ParseEnd
