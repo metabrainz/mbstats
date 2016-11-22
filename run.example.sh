@@ -4,7 +4,7 @@ LOGDIR=/var/log/
 FILE=mywebsite.stats.log
 
 NAME=$(echo -n $FILE |sed 's/\.stats.log$//')
-CONTAINER_NAME=mbstats-($NAME)
+CONTAINER_NAME=mbstats-$NAME
 VOLUME_NAME=$CONTAINER_NAME
 
 docker volume create --driver local --name $VOLUME_NAME
