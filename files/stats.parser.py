@@ -190,12 +190,28 @@ def parse_upstreams(row):
             r['status'][k][item[1]] += 1
         else:
             r['status'][k][item[1]] = 1
-        if item[2] != '-':
+
+        try:
             r['response_time'][k] += float(item[2])
-        if item[3] != '-':
+        except ValueError:
+            if item[2] not in ('-', ''):
+                raise
+            pass
+
+        try:
             r['connect_time'][k] += float(item[3])
-        if item[4] != '-':
+        except ValueError:
+            if item[3] not in ('-', ''):
+                raise
+            pass
+
+        try:
             r['header_time'][k] += float(item[4])
+        except ValueError:
+            if item[4] not in ('-', ''):
+                raise
+            pass
+
     return r
 
 class ParseEnd(Exception):
