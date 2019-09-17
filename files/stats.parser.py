@@ -703,7 +703,7 @@ def main():
 
     """
 
-    defaults = {
+    default_options = {
         'config': [],
         'datacenter': '',
         'dry_run': False,
@@ -742,19 +742,19 @@ def main():
 
     if args.config:
         for conf_path in args.config:
-            defaults['config'].append(conf_path)
+            default_options['config'].append(conf_path)
             config = read_config(conf_path)
             for k in config:
-                if k not in defaults:
+                if k not in default_options:
                     continue
                 if k == 'config':
                     continue
-                defaults[k] = config[k]
+                default_options[k] = config[k]
 
     parser = argparse.ArgumentParser(description=description, epilog=epilog,
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
                                      parents=[conf_parser], conflict_handler='resolve')
-    parser.set_defaults(**defaults)
+    parser.set_defaults(**default_options)
 
     required = parser.add_argument_group('required arguments')
     required.add_argument('-f', '--file',
