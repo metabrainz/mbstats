@@ -72,7 +72,6 @@ except ImportError:
     sys.path.append(os.path.join(os.path.dirname(__file__), 'pygtail'))
     from pygtail import Pygtail
 
-script_start_time = time()
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
@@ -659,396 +658,402 @@ def read_config(conf_path):
     with open(conf_path, 'r') as f:
         return json.load(f)
 
+def main():
+    script_start_time = time()
 
-description = \
-    """Tail and parse a formatted nginx log file, sending results to InfluxDB."""
-epilog = \
+    description = \
+        """Tail and parse a formatted nginx log file, sending results to InfluxDB."""
+    epilog = \
+        """
+    To use add following to http section of your nginx configuration:
+
+      log_format stats
+        '1|'
+        '$msec|'
+        '$host|'
+        '$statproto|'
+        '$loctag|'
+        '$status|'
+        '$bytes_sent|'
+        '$gzip_ratio|'
+        '$request_length|'
+        '$request_time|'
+        '$upstream_addr|'
+        '$upstream_status|'
+        '$upstream_response_time|'
+        '$upstream_connect_time|'
+        '$upstream_header_time';
+
+      map $host $loctag {
+        default '-';
+      }
+
+      map $https $statproto {
+        default '-';
+        on 's';
+      }
+
+    You can use $loctag to tag a specific location:
+        set $loctag "ws";
+
+    In addition of your usual access log, add something like:
+        access_log /var/log/nginx/my.stats.log stats buffer=256k flush=10s
+
+    Note: first field in stats format declaration is a format version, it should be set to 1.
+
     """
-To use add following to http section of your nginx configuration:
 
-  log_format stats
-    '1|'
-    '$msec|'
-    '$host|'
-    '$statproto|'
-    '$loctag|'
-    '$status|'
-    '$bytes_sent|'
-    '$gzip_ratio|'
-    '$request_length|'
-    '$request_time|'
-    '$upstream_addr|'
-    '$upstream_status|'
-    '$upstream_response_time|'
-    '$upstream_connect_time|'
-    '$upstream_header_time';
+    defaults = {
+        'config': [],
+        'datacenter': '',
+        'dry_run': False,
+        'file': '',
+        'hostname': platform.node(),
+        'log_conf': None,
+        'log_dir': '',
+        'max_lines': 0,
+        'name': '',
+        'quiet': 0,
+        'workdir': '.',
 
-  map $host $loctag {
-    default '-';
-  }
+        'influx_batch_size': 500,
+        'influx_database': 'mbstats',
+        'influx_host': 'localhost',
+        'influx_password': 'root',
+        'influx_port': 8086,
+        'influx_timeout': 40,
+        'influx_username': 'root',
 
-  map $https $statproto {
-    default '-';
-    on 's';
-  }
+        'bucket_duration': 60,
+        'debug': False,
+        'do_not_skip_to_end': False,
+        'influx_drop_database': False,
+        'locker': 'fcntl',
+        'lookback_factor': 2,
+        'send_failure_fifo_size': 30,
+        'simulate_send_failure': False,
+        'startover': False,
+        'syslog': False,
+    }
+    conf_parser = argparse.ArgumentParser(add_help=False)
+    conf_parser.add_argument("-c", "--config", help="Specify json config file(s)",
+                             action='append', metavar="FILE")
+    args, remaining_argv = conf_parser.parse_known_args()
 
-You can use $loctag to tag a specific location:
-    set $loctag "ws";
+    if args.config:
+        for conf_path in args.config:
+            defaults['config'].append(conf_path)
+            config = read_config(conf_path)
+            for k in config:
+                if k not in defaults:
+                    continue
+                if k == 'config':
+                    continue
+                defaults[k] = config[k]
 
-In addition of your usual access log, add something like:
-    access_log /var/log/nginx/my.stats.log stats buffer=256k flush=10s
+    parser = argparse.ArgumentParser(description=description, epilog=epilog,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     parents=[conf_parser], conflict_handler='resolve')
+    parser.set_defaults(**defaults)
 
-Note: first field in stats format declaration is a format version, it should be set to 1.
+    required = parser.add_argument_group('required arguments')
+    required.add_argument('-f', '--file',
+                          help="log file to process")
 
-"""
+    common = parser.add_argument_group('common arguments')
+    common.add_argument('-c', '--config', action='append', metavar='FILE',
+                        help="Specify json config file(s)")
+    common.add_argument('-d', '--datacenter',
+                        help="string to use as 'dc' tag")
+    common.add_argument('-H', '--hostname',
+                        help="string to use as 'host' tag")
+    common.add_argument('-l', '--log-dir', action='store',
+                        help='Where to store the stats.parser logfile.  Default location is workdir')
+    common.add_argument('-n', '--name',
+                        help="string to use as 'name' tag")
+    common.add_argument('-m', '--max-lines', type=int,
+                        help="maximum number of lines to process")
+    common.add_argument('-w', '--workdir',
+                        help="directory where offset/status are stored")
+    common.add_argument('-y', '--dry-run', action='store_true',
+                        help='Parse the log file but send stats to standard output')
+    common.add_argument('-q', '--quiet', action='count',
+                        help='Reduce verbosity / quiet mode')
 
-defaults = {
-    'config': [],
-    'datacenter': '',
-    'dry_run': False,
-    'file': '',
-    'hostname': platform.node(),
-    'log_conf': None,
-    'log_dir': '',
-    'max_lines': 0,
-    'name': '',
-    'quiet': 0,
-    'workdir': '.',
+    influx = parser.add_argument_group('influxdb arguments')
+    influx.add_argument('--influx-host',
+                        help="influxdb host")
+    influx.add_argument('--influx-port', type=int,
+                        help="influxdb port")
+    influx.add_argument('--influx-username',
+                        help="influxdb username")
+    influx.add_argument('--influx-password',
+                        help="influxdb password")
+    influx.add_argument('--influx-database',
+                        help="influxdb database")
+    influx.add_argument('--influx-timeout', type=int,
+                        help="influxdb timeout")
+    influx.add_argument('--influx-batch-size', type=int,
+                        help="number of points to send per batch")
 
-    'influx_batch_size': 500,
-    'influx_database': 'mbstats',
-    'influx_host': 'localhost',
-    'influx_password': 'root',
-    'influx_port': 8086,
-    'influx_timeout': 40,
-    'influx_username': 'root',
+    expert = parser.add_argument_group('expert arguments')
+    expert.add_argument('-D', '--debug', action='store_true',
+                        help="Enable debug mode")
+    expert.add_argument('--influx-drop-database', action='store_true',
+                        help="drop existing InfluxDB database, use with care")
+    expert.add_argument('--locker', choices=('fcntl', 'portalocker'),
 
-    'bucket_duration': 60,
-    'debug': False,
-    'do_not_skip_to_end': False,
-    'influx_drop_database': False,
-    'locker': 'fcntl',
-    'lookback_factor': 2,
-    'send_failure_fifo_size': 30,
-    'simulate_send_failure': False,
-    'startover': False,
-    'syslog': False,
-}
-conf_parser = argparse.ArgumentParser(add_help=False)
-conf_parser.add_argument("-c", "--config", help="Specify json config file(s)",
-                         action='append', metavar="FILE")
-args, remaining_argv = conf_parser.parse_known_args()
+                        help="type of lock to use")
+    expert.add_argument('--lookback-factor', type=int,
+                        help="number of buckets to wait before sending any data")
+    expert.add_argument('--startover', action='store_true',
+                        help="ignore all status/offset, like a first run")
+    expert.add_argument('--do-not-skip-to-end', action='store_true',
+                        help="do not skip to end on first run")
+    expert.add_argument('--bucket-duration', type=int,
+                        help="duration for each bucket in seconds")
+    expert.add_argument('--log-conf', action='store',
+                        help='Logging configuration file. None by default')
+    expert.add_argument('--dump-config', action='store_true',
+                        help="dump config as json to stdout")
+    expert.add_argument('--syslog', action='store_true',
+                        help="Log to syslog")
+    expert.add_argument('--send-failure-fifo-size', type=int,
+                        help="Number of failed sends to backup")
+    expert.add_argument('--simulate-send-failure', action='store_true',
+                        help="Simulate send failure for testing purposes")
 
-if args.config:
-    for conf_path in args.config:
-        defaults['config'].append(conf_path)
-        config = read_config(conf_path)
-        for k in config:
-            if k not in defaults:
-                continue
-            if k == 'config':
-                continue
-            defaults[k] = config[k]
+    options = parser.parse_args(remaining_argv)
+    if options.dump_config:
+        print((json.dumps(vars(options), indent=4, sort_keys=True)))
+        sys.exit(0)
 
-parser = argparse.ArgumentParser(description=description, epilog=epilog,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter,
-                                 parents=[conf_parser], conflict_handler='resolve')
-parser.set_defaults(**defaults)
+    log_dir = options.log_dir
+    if not log_dir:
+        log_dir = options.workdir
 
-required = parser.add_argument_group('required arguments')
-required.add_argument('-f', '--file',
-                      help="log file to process")
+    logger = logging.getLogger('stats.parser')
+    if options.syslog:
+        hdlr = logging.handlers.SysLogHandler(
+            address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_SYSLOG)
+        formatter = logging.Formatter('%(name)s: %(message)s')
+        hdlr.setFormatter(formatter)
+    else:
+        # Logging infrastructure for use throughout the script.
+        # Uses appending log file, rotated at 100 MB, keeping 5.
+        if (not os.path.isdir(log_dir)):
+            os.mkdir(log_dir)
+        formatter = logging.Formatter(
+            '%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
+        hdlr = logging.handlers.RotatingFileHandler(
+            '%s/stats.parser.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
+        hdlr.setFormatter(formatter)
 
-common = parser.add_argument_group('common arguments')
-common.add_argument('-c', '--config', action='append', metavar='FILE',
-                    help="Specify json config file(s)")
-common.add_argument('-d', '--datacenter',
-                    help="string to use as 'dc' tag")
-common.add_argument('-H', '--hostname',
-                    help="string to use as 'host' tag")
-common.add_argument('-l', '--log-dir', action='store',
-                    help='Where to store the stats.parser logfile.  Default location is workdir')
-common.add_argument('-n', '--name',
-                    help="string to use as 'name' tag")
-common.add_argument('-m', '--max-lines', type=int,
-                    help="maximum number of lines to process")
-common.add_argument('-w', '--workdir',
-                    help="directory where offset/status are stored")
-common.add_argument('-y', '--dry-run', action='store_true',
-                    help='Parse the log file but send stats to standard output')
-common.add_argument('-q', '--quiet', action='count',
-                    help='Reduce verbosity / quiet mode')
+    logger.addHandler(hdlr)
+    logger.setLevel(logging.INFO)
 
-influx = parser.add_argument_group('influxdb arguments')
-influx.add_argument('--influx-host',
-                    help="influxdb host")
-influx.add_argument('--influx-port', type=int,
-                    help="influxdb port")
-influx.add_argument('--influx-username',
-                    help="influxdb username")
-influx.add_argument('--influx-password',
-                    help="influxdb password")
-influx.add_argument('--influx-database',
-                    help="influxdb database")
-influx.add_argument('--influx-timeout', type=int,
-                    help="influxdb timeout")
-influx.add_argument('--influx-batch-size', type=int,
-                    help="number of points to send per batch")
+    if options.log_conf:
+        logging.config.fileConfig(options.log_conf)
 
-expert = parser.add_argument_group('expert arguments')
-expert.add_argument('-D', '--debug', action='store_true',
-                    help="Enable debug mode")
-expert.add_argument('--influx-drop-database', action='store_true',
-                    help="drop existing InfluxDB database, use with care")
-expert.add_argument('--locker', choices=('fcntl', 'portalocker'),
+    if options.debug:
+        logger.setLevel(logging.DEBUG)
 
-                    help="type of lock to use")
-expert.add_argument('--lookback-factor', type=int,
-                    help="number of buckets to wait before sending any data")
-expert.add_argument('--startover', action='store_true',
-                    help="ignore all status/offset, like a first run")
-expert.add_argument('--do-not-skip-to-end', action='store_true',
-                    help="do not skip to end on first run")
-expert.add_argument('--bucket-duration', type=int,
-                    help="duration for each bucket in seconds")
-expert.add_argument('--log-conf', action='store',
-                    help='Logging configuration file. None by default')
-expert.add_argument('--dump-config', action='store_true',
-                    help="dump config as json to stdout")
-expert.add_argument('--syslog', action='store_true',
-                    help="Log to syslog")
-expert.add_argument('--send-failure-fifo-size', type=int,
-                    help="Number of failed sends to backup")
-expert.add_argument('--simulate-send-failure', action='store_true',
-                    help="Simulate send failure for testing purposes")
+    if not options.quiet:
+        logger.info("Starting with options %r", vars(options))
+    elif options.quiet == 1:
+        logger.info("Starting")
 
-options = parser.parse_args(remaining_argv)
-if options.dump_config:
-    print((json.dumps(vars(options), indent=4, sort_keys=True)))
-    sys.exit(0)
+    filename = options.file
+    if not filename:
+        parser.print_usage()
+        sys.exit(1)
 
-log_dir = options.log_dir
-if not log_dir:
-    log_dir = options.workdir
+    if options.locker == 'portalocker':
+        import portalocker
+        lock_exception_klass = portalocker.LockException
+    else:
+        import fcntl
+        lock_exception_klass = IOError
 
-logger = logging.getLogger('stats.parser')
-if options.syslog:
-    hdlr = logging.handlers.SysLogHandler(
-        address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_SYSLOG)
-    formatter = logging.Formatter('%(name)s: %(message)s')
-    hdlr.setFormatter(formatter)
-else:
-    # Logging infrastructure for use throughout the script.
-    # Uses appending log file, rotated at 100 MB, keeping 5.
-    if (not os.path.isdir(log_dir)):
-        os.mkdir(log_dir)
-    formatter = logging.Formatter(
-        '%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
-    hdlr = logging.handlers.RotatingFileHandler(
-        '%s/stats.parser.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
-    hdlr.setFormatter(formatter)
+    if not has_influxdb:
+        options.dry_run = True
 
-logger.addHandler(hdlr)
-logger.setLevel(logging.INFO)
+    workdir = os.path.abspath(options.workdir)
+    safefile = SafeFile(workdir, filename)
+    files = {
+        'offset':   safefile.suffixed('offset'),
+        'status':   safefile.suffixed('status'),
+        'lock':     safefile.suffixed('lock')
+    }
 
-if options.log_conf:
-    logging.config.fileConfig(options.log_conf)
-
-if options.debug:
-    logger.setLevel(logging.DEBUG)
-
-if not options.quiet:
-    logger.info("Starting with options %r", vars(options))
-elif options.quiet == 1:
-    logger.info("Starting")
-
-filename = options.file
-if not filename:
-    parser.print_usage()
-    sys.exit(1)
-
-if options.locker == 'portalocker':
-    import portalocker
-    lock_exception_klass = portalocker.LockException
-else:
-    import fcntl
-    lock_exception_klass = IOError
-
-if not has_influxdb:
-    options.dry_run = True
-
-workdir = os.path.abspath(options.workdir)
-safefile = SafeFile(workdir, filename)
-files = {
-    'offset':   safefile.suffixed('offset'),
-    'status':   safefile.suffixed('status'),
-    'lock':     safefile.suffixed('lock')
-}
-
-# Check for lock file so we don't run multiple copies of the same parser
-# simultaneuosly. This will happen if the log parsing takes more time than
-# the cron period.
-try:
-    lockfile = start_locking(files['lock'].main)
-except LockingError as e:
-    msg = "Locking error: %s" % e
-    print(msg)
-    logger.warning(msg)
-    sys.exit(1)
+    # Check for lock file so we don't run multiple copies of the same parser
+    # simultaneuosly. This will happen if the log parsing takes more time than
+    # the cron period.
+    try:
+        lockfile = start_locking(files['lock'].main)
+    except LockingError as e:
+        msg = "Locking error: %s" % e
+        print(msg)
+        logger.warning(msg)
+        sys.exit(1)
 
 
-def cleanup():
-    files['offset'].tmpclean()
-    files['status'].tmpclean()
-    end_locking(lockfile, files['lock'].main)
+    def cleanup():
+        files['offset'].tmpclean()
+        files['status'].tmpclean()
+        end_locking(lockfile, files['lock'].main)
 
 
-def finalize():
-    files['offset'].tmp2main()
-    files['status'].tmp2main()
+    def finalize():
+        files['offset'].tmp2main()
+        files['status'].tmp2main()
 
 
-if options.startover:
-    files['offset'].remove_main()
-    files['status'].remove_main()
+    if options.startover:
+        files['offset'].remove_main()
+        files['status'].remove_main()
 
-parsed_lines = 0
-skipped_lines = 0
-res = False
-try:
-    influxdb = influxdb_client(options)
+    parsed_lines = 0
+    skipped_lines = 0
+    res = False
+    try:
+        influxdb = influxdb_client(options)
 
-    files['offset'].main2tmp()
+        files['offset'].main2tmp()
 
-    pygtail = Pygtail(filename, offset_file=files['offset'].tmp)
+        pygtail = Pygtail(filename, offset_file=files['offset'].tmp)
+
+        try:
+            status = load_obj(files['status'].main)
+        except IOError:
+            status = {}
+
+        save = False
+        if 'last_msec' not in status:
+            status['last_msec'] = 0
+            save = True
+        if 'leftover' not in status:
+            status['leftover'] = None
+            save = True
+        if 'bucket_duration' not in status:
+            status['bucket_duration'] = options.bucket_duration
+            save = True
+        if 'lookback_factor' not in status:
+            status['lookback_factor'] = options.lookback_factor
+            save = True
+        if 'saved_points' not in status:
+            status['saved_points'] = deque([], options.send_failure_fifo_size)
+            save = True
+        if save:
+            save_obj(status, files['status'].tmp)
+
+        if status['leftover'] is not None and len(status['leftover']) > 0:
+            exit = False
+            msg = 'Error:'
+            if status['bucket_duration'] != options.bucket_duration:
+                msg += (" Bucket duration mismatch %d vs %d (set via option)" %
+                        (status['bucket_duration'], options.bucket_duration))
+                exit = True
+            if status['lookback_factor'] != options.lookback_factor:
+                msg += (" Lookback factor mismatch %d vs %d (set via option)" %
+                        (status['lookback_factor'], options.lookback_factor))
+                exit = True
+            if exit:
+                msg += (" If you know what you are doing, remove status file %s" %
+                        files['status'].main)
+                logger.error(msg)
+                print(msg)
+                sys.exit(1)
+
+        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(
+            pygtail, status, options)
+        status['leftover'] = leftover
+        status['last_msec'] = last_msec
+
+        points = mbs2influx(mbs, status)
+        if points or status['saved_points']:
+            tags = {
+                'host': options.hostname,
+                'name': options.name or filename,
+            }
+            if options.datacenter:
+                tags['dc'] = options.datacenter
+
+            if status['saved_points']:
+                to_resend = list()
+                for savedpoints in status['saved_points']:
+                    to_resend += savedpoints
+                try:
+                    logger.info("Trying to send %d saved points" %
+                                len(to_resend))
+                    if options.simulate_send_failure:
+                        raise Exception('Simulating send failure (resend)')
+                    if influxdb_send(influxdb, to_resend, tags, options):
+                        status['saved_points'].clear()
+                except Exception as e:
+                    msg = "Influx send failed again: %s: %s" % (lineno(), e)
+                    print(msg)
+                    traceback.print_exc()
+                    logger.error(msg)
+                    pass
+
+            if points:
+                try:
+                    if options.simulate_send_failure:
+                        raise Exception('Simulating send failure')
+                    ret = influxdb_send(influxdb, points, tags, options)
+                    if not ret:
+                        raise Exception('influx_send failed')
+                except Exception as e:
+                    msg = "Influx send: Exception caught at %s: %s" % (lineno(), e)
+                    print(msg)
+                    traceback.print_exc()
+                    logger.error(msg)
+                    status['saved_points'].append(points)
+                    logger.info("Failed to send, saving points for later %d/%d" %
+                                (len(status['saved_points']),
+                                 options.send_failure_fifo_size))
+                    pass
+
+        save_obj(status, files['status'].tmp)
+    except KeyboardInterrupt:
+        if options.quiet < 2:
+            msg = "Exiting on keyboard interrupt"
+            print(msg)
+            logger.info(msg)
+        retcode = 1
+    except SystemExit as e:
+        raise e
+    except Exception as e:
+        msg = "Exception caught at %s: %s" % (lineno(), e)
+        print(msg)
+        traceback.print_exc()
+        logger.error(msg)
+        retcode = 1
+    else:
+        finalize()
+        retcode = 0
+    finally:
+        cleanup()
+
+    if options.quiet < 2:
+        # Log the execution time
+        exec_time = round(time() - script_start_time, 1)
+        if parsed_lines:
+            mean_per_line = 1000000.0 * (exec_time / parsed_lines)
+        else:
+            mean_per_line = 0.0
+        logger.info("duration=%ss parsed=%d skipped=%d mean_per_line=%0.3fµs" %
+                    (exec_time, parsed_lines, skipped_lines, mean_per_line))
+
 
     try:
-        status = load_obj(files['status'].main)
-    except IOError:
-        status = {}
+        end_locking(lockfile, files['lock'].main)
+    except:
+        pass
 
-    save = False
-    if 'last_msec' not in status:
-        status['last_msec'] = 0
-        save = True
-    if 'leftover' not in status:
-        status['leftover'] = None
-        save = True
-    if 'bucket_duration' not in status:
-        status['bucket_duration'] = options.bucket_duration
-        save = True
-    if 'lookback_factor' not in status:
-        status['lookback_factor'] = options.lookback_factor
-        save = True
-    if 'saved_points' not in status:
-        status['saved_points'] = deque([], options.send_failure_fifo_size)
-        save = True
-    if save:
-        save_obj(status, files['status'].tmp)
-
-    if status['leftover'] is not None and len(status['leftover']) > 0:
-        exit = False
-        msg = 'Error:'
-        if status['bucket_duration'] != options.bucket_duration:
-            msg += (" Bucket duration mismatch %d vs %d (set via option)" %
-                    (status['bucket_duration'], options.bucket_duration))
-            exit = True
-        if status['lookback_factor'] != options.lookback_factor:
-            msg += (" Lookback factor mismatch %d vs %d (set via option)" %
-                    (status['lookback_factor'], options.lookback_factor))
-            exit = True
-        if exit:
-            msg += (" If you know what you are doing, remove status file %s" %
-                    files['status'].main)
-            logger.error(msg)
-            print(msg)
-            sys.exit(1)
-
-    mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(
-        pygtail, status, options)
-    status['leftover'] = leftover
-    status['last_msec'] = last_msec
-
-    points = mbs2influx(mbs, status)
-    if points or status['saved_points']:
-        tags = {
-            'host': options.hostname,
-            'name': options.name or filename,
-        }
-        if options.datacenter:
-            tags['dc'] = options.datacenter
-
-        if status['saved_points']:
-            to_resend = list()
-            for savedpoints in status['saved_points']:
-                to_resend += savedpoints
-            try:
-                logger.info("Trying to send %d saved points" %
-                            len(to_resend))
-                if options.simulate_send_failure:
-                    raise Exception('Simulating send failure (resend)')
-                if influxdb_send(influxdb, to_resend, tags, options):
-                    status['saved_points'].clear()
-            except Exception as e:
-                msg = "Influx send failed again: %s: %s" % (lineno(), e)
-                print(msg)
-                traceback.print_exc()
-                logger.error(msg)
-                pass
-
-        if points:
-            try:
-                if options.simulate_send_failure:
-                    raise Exception('Simulating send failure')
-                ret = influxdb_send(influxdb, points, tags, options)
-                if not ret:
-                    raise Exception('influx_send failed')
-            except Exception as e:
-                msg = "Influx send: Exception caught at %s: %s" % (lineno(), e)
-                print(msg)
-                traceback.print_exc()
-                logger.error(msg)
-                status['saved_points'].append(points)
-                logger.info("Failed to send, saving points for later %d/%d" %
-                            (len(status['saved_points']),
-                             options.send_failure_fifo_size))
-                pass
-
-    save_obj(status, files['status'].tmp)
-except KeyboardInterrupt:
-    if options.quiet < 2:
-        msg = "Exiting on keyboard interrupt"
-        print(msg)
-        logger.info(msg)
-    retcode = 1
-except SystemExit as e:
-    raise e
-except Exception as e:
-    msg = "Exception caught at %s: %s" % (lineno(), e)
-    print(msg)
-    traceback.print_exc()
-    logger.error(msg)
-    retcode = 1
-else:
-    finalize()
-    retcode = 0
-finally:
-    cleanup()
-
-if options.quiet < 2:
-    # Log the execution time
-    exec_time = round(time() - script_start_time, 1)
-    if parsed_lines:
-        mean_per_line = 1000000.0 * (exec_time / parsed_lines)
-    else:
-        mean_per_line = 0.0
-    logger.info("duration=%ss parsed=%d skipped=%d mean_per_line=%0.3fµs" %
-                (exec_time, parsed_lines, skipped_lines, mean_per_line))
+    sys.exit(retcode)
 
 
-try:
-    end_locking(lockfile, files['lock'].main)
-except:
-    pass
-
-sys.exit(retcode)
+if __name__ == "__main__":
+    main()
