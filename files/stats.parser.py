@@ -65,24 +65,28 @@ import sys
 import traceback
 
 
+from enum import IntEnum, unique
+
 script_start_time = time()
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
-pos_version = 0
-pos_msec = 1
-pos_vhost = 2
-pos_protocol = 3
-pos_loctag = 4
-pos_status = 5
-pos_bytes_sent = 6
-pos_gzip_ratio = 7
-pos_request_length = 8
-pos_request_time = 9
-pos_upstream_addr = 10
-pos_upstream_status = 11
-pos_upstream_response_time = 12
-pos_upstream_connect_time = 13
-pos_upstream_header_time = 14
+@unique
+class PosField(IntEnum):
+    version = 0
+    msec = 1
+    vhost = 2
+    protocol = 3
+    loctag = 4
+    status = 5
+    bytes_sent = 6
+    gzip_ratio = 7
+    request_length = 8
+    request_time = 9
+    upstream_addr = 10
+    upstream_status = 11
+    upstream_response_time = 12
+    upstream_connect_time = 13
+    upstream_header_time = 14
 
 
 mbs_tags = {
@@ -244,7 +248,7 @@ def parsefile(tailer, status, options):
                 parsed_lines += 1
                 try:
                     items = line.split('|', 2)
-                    msec = float(items[pos_msec])
+                    msec = float(items[PosField.msec])
                     if msec > last_msec:
                         last_msec = msec
                     bucket = int(math.ceil(msec/bucket_duration))
@@ -266,7 +270,7 @@ def parsefile(tailer, status, options):
                 parsed_lines += 1
                 try:
                     items = line.split('|')
-                    msec = float(items[pos_msec])
+                    msec = float(items[PosField.msec])
                     if msec <= ignore_before:
                         # skip unordered & old entries
                         raise ParseSkip
@@ -275,28 +279,28 @@ def parsefile(tailer, status, options):
                     bucket = int(math.ceil(msec/bucket_duration))
 
                     row = {
-                        'vhost': items[pos_vhost],
-                        'protocol': items[pos_protocol],
-                        'loctag': items[pos_loctag],
-                        'status': int(items[pos_status]),
-                        'bytes_sent': int(items[pos_bytes_sent]),
-                        'request_length': int(items[pos_request_length]),
+                        'vhost': items[PosField.vhost],
+                        'protocol': items[PosField.protocol],
+                        'loctag': items[PosField.loctag],
+                        'status': int(items[PosField.status]),
+                        'bytes_sent': int(items[PosField.bytes_sent]),
+                        'request_length': int(items[PosField.request_length]),
                     }
 
-                    if items[pos_gzip_ratio] != '-':
-                        row['gzip_ratio'] = float(items[pos_gzip_ratio])
-                    if items[pos_request_time] != '-':
-                        row['request_time'] = float(items[pos_request_time])
+                    if items[PosField.gzip_ratio] != '-':
+                        row['gzip_ratio'] = float(items[PosField.gzip_ratio])
+                    if items[PosField.request_time] != '-':
+                        row['request_time'] = float(items[PosField.request_time])
 
-                    if items[pos_upstream_addr] != '-':
+                    if items[PosField.upstream_addr] != '-':
                         # Note : last element contains trailing new line character
                         # from readline()
                         row['upstreams'] = parse_upstreams({
-                            'upstream_addr': items[pos_upstream_addr],
-                            'upstream_status': items[pos_upstream_status],
-                            'upstream_response_time': items[pos_upstream_response_time],
-                            'upstream_connect_time': items[pos_upstream_connect_time],
-                            'upstream_header_time': items[pos_upstream_header_time].rstrip('\r\n'),
+                            'upstream_addr': items[PosField.upstream_addr],
+                            'upstream_status': items[PosField.upstream_status],
+                            'upstream_response_time': items[PosField.upstream_response_time],
+                            'upstream_connect_time': items[PosField.upstream_connect_time],
+                            'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
                         })
 
                     storage[bucket].append(row)
