@@ -44,7 +44,6 @@
 
 
 from collections import (defaultdict, deque)
-from influxdb import InfluxDBClient
 from pygtail import Pygtail
 from time import time
 
@@ -66,6 +65,11 @@ import traceback
 
 
 from enum import IntEnum, unique
+try:
+    from influxdb import InfluxDBClient
+    has_influxdb = True
+except ImportError:
+    has_influxdb = False
 
 script_start_time = time()
 
@@ -499,6 +503,8 @@ def mbs2influx(mbs, status):
 
 
 def influxdb_client(options):
+    if options.dry_run:
+        return None
     database = options.influx_database
     client = InfluxDBClient(host=options.influx_host,
                             port=options.influx_port,
@@ -519,7 +525,7 @@ def influxdb_send(client, points, tags, options):
         if options.quiet < 2:
             logger.info("Sending %d points" % npoints)
         logger.debug(points[0])
-        if options.dry_run:
+        if options.dry_run or not client:
             logger.debug("Dry run")
             print((json.dumps(points, indent=4, sort_keys=True)))
             return True
@@ -866,6 +872,8 @@ else:
     import fcntl
     lock_exception_klass = IOError
 
+if not has_influxdb:
+    options.dry_run = True
 
 workdir = os.path.abspath(options.workdir)
 safefile = SafeFile(workdir, filename)
