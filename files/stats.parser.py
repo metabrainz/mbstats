@@ -1,68 +1,63 @@
-#!/usr/bin/python2 -tt
+#!/usr/bin/python -tt
 # -*- coding: utf-8 -*-
 
-###
-###  stats.parser.py
-###
-###  Tails a log and applies mbstats parser, then reports metrics to InfluxDB
-###
-###  Usage:
-###
-###    $ stats.parser.py [options]
-###
-###  Help:
-###
-###    $ stats.parser.py -h
-###
-###
-###  Copyright 2016, MetaBrainz Foundation
-###  Author: Laurent Monin
-###
-###  stats.parser.py is free software: you can redistribute it and/or modify
-###  it under the terms of the GNU General Public License as published by
-###  the Free Software Foundation, either version 3 of the License, or
-###  (at your option) any later version.
-###
-###  stats.parser.py is distributed in the hope that it will be useful,
-###  but WITHOUT ANY WARRANTY; without even the implied warranty of
-###  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-###  GNU General Public License for more details.
-###
-###  You should have received a copy of the GNU General Public License
-###  along with Logster. If not, see <http://www.gnu.org/licenses/>.
-###
-###  Include bits of code from Etsy Logster
-###  https://github.com/etsy/logster
-###
-###  Logster itself was forked from the ganglia-logtailer project
-###  (http://bitbucket.org/maplebed/ganglia-logtailer):
-###    Copyright Linden Research, Inc. 2008
-###    Released under the GPL v2 or later.
-###    For a full description of the license, please visit
-###    http://www.gnu.org/licenses/gpl.txt
-###
+#
+# stats.parser.py
+#
+# Tails a log and applies mbstats parser, then reports metrics to InfluxDB
+#
+# Usage:
+#
+# $ stats.parser.py [options]
+#
+# Help:
+#
+# $ stats.parser.py -h
+#
+#
+# Copyright 2016-2019, MetaBrainz Foundation
+# Author: Laurent Monin
+#
+# stats.parser.py is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# stats.parser.py is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Logster. If not, see <http://www.gnu.org/licenses/>.
+#
+# Include bits of code from Etsy Logster
+# https://github.com/etsy/logster
+#
+# Logster itself was forked from the ganglia-logtailer project
+# (http://bitbucket.org/maplebed/ganglia-logtailer):
+# Copyright Linden Research, Inc. 2008
+# Released under the GPL v2 or later.
+# For a full description of the license, please visit
+# http://www.gnu.org/licenses/gpl.txt
+#
 
 
 from collections import (defaultdict, deque)
 from influxdb import InfluxDBClient
-from math import floor
 from pygtail import Pygtail
 from time import time
+
 import argparse
-try:
-    import cPickle as pickle
-except:
-    import pickle
-import csv
 import datetime
-import gzip
 import inspect
 import itertools
 import json
-import math
-import logging.handlers
 import logging.config
+import logging.handlers
+import math
 import os.path
+import pickle
 import platform
 import re
 import shutil
@@ -108,7 +103,6 @@ pos_upstream_connect_time = 13
 pos_upstream_header_time = 14
 
 
-
 mbs_tags = {
     'hits': ('vhost', 'protocol', 'loctag'),
     'hits_with_upstream': ('vhost', 'protocol', 'loctag'),
@@ -129,24 +123,32 @@ mbs_tags = {
     'upstreams_header_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
 }
 
+
 def factory():
     return lambda x: x
+
+
 types = defaultdict(factory)
 types['upstream_status'] = lambda x: int(x)
-types['upstream_response_time'] = types['upstream_connect_time'] = types['upstream_header_time'] = lambda x: float(x)
+types['upstream_response_time'] = types['upstream_connect_time'] = types['upstream_header_time'] = lambda x: float(
+    x)
 
-## This provides a lineno() function to make it easy to grab the line
-## number that we're on (for logging)
-## Danny Yoo (dyoo@hkn.eecs.berkeley.edu)
-## taken from http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/145297
+# This provides a lineno() function to make it easy to grab the line
+# number that we're on (for logging)
+# Danny Yoo (dyoo@hkn.eecs.berkeley.edu)
+# taken from http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/145297
+
+
 def lineno():
     """Returns the current line number in our program."""
     return inspect.currentframe().f_back.f_lineno
 
-#@profile
+# @profile
+
+
 def parse_upstreams(row):
-    #servers were contacted ", "
-    #internal redirect " : "
+    # servers were contacted ", "
+    # internal redirect " : "
     r = dict()
     splitted = [x.split(' : ') for x in row['upstream_addr'].split(", ")]
     r['servers_contacted'] = len(splitted)
@@ -158,16 +160,16 @@ def parse_upstreams(row):
                                                           row['upstream_status'].split(", ")]))
     upstream_response_time = \
         list(itertools.chain.from_iterable([x.split(' : ') for x
-                                                          in
-                                                          row['upstream_response_time'].split(", ")]))
+                                            in
+                                            row['upstream_response_time'].split(", ")]))
     upstream_header_time = \
         list(itertools.chain.from_iterable([x.split(' : ') for x
-                                                          in
-                                                          row['upstream_header_time'].split(", ")]))
+                                            in
+                                            row['upstream_header_time'].split(", ")]))
     upstream_connect_time = \
         list(itertools.chain.from_iterable([x.split(' : ') for x
-                                                          in
-                                                          row['upstream_connect_time'].split(", ")]))
+                                            in
+                                            row['upstream_connect_time'].split(", ")]))
 
     r['status'] = dict()
     r['response_time'] = defaultdict(float)
@@ -179,11 +181,11 @@ def parse_upstreams(row):
                     upstream_response_time,
                     upstream_connect_time,
                     upstream_header_time
-                   ):
+                    ):
         k = item[0]
         r['servers'].append(k)
-# not using defauldict() here intentionally, because it requires lamba/function
-# and it breaks with pickle
+        # not using defauldict() here intentionally, because it requires lamba/function
+        # and it breaks with pickle
         if k not in r['status']:
             r['status'][k] = dict()
         if item[1] in r['status'][k]:
@@ -214,11 +216,14 @@ def parse_upstreams(row):
 
     return r
 
+
 class ParseEnd(Exception):
     pass
 
+
 class ParseSkip(Exception):
     pass
+
 
 def parsefile(tailer, status, options):
     parsed_lines = 0
@@ -272,7 +277,7 @@ def parsefile(tailer, status, options):
         last_msec = (bucket+lookback_factor) * bucket_duration
         skipped_lines = parsed_lines
         logger.info("End of first run: bucket=%d last_msec=%f skipped=%d" %
-                     (bucket, last_msec, skipped_lines))
+                    (bucket, last_msec, skipped_lines))
     else:
         try:
             for line in tailer:
@@ -305,11 +310,11 @@ def parsefile(tailer, status, options):
                         # Note : last element contains trailing new line character
                         # from readline()
                         row['upstreams'] = parse_upstreams({
-                        'upstream_addr': items[pos_upstream_addr],
-                        'upstream_status': items[pos_upstream_status],
-                        'upstream_response_time': items[pos_upstream_response_time],
-                        'upstream_connect_time': items[pos_upstream_connect_time],
-                        'upstream_header_time': items[pos_upstream_header_time].rstrip('\r\n'),
+                            'upstream_addr': items[pos_upstream_addr],
+                            'upstream_status': items[pos_upstream_status],
+                            'upstream_response_time': items[pos_upstream_response_time],
+                            'upstream_connect_time': items[pos_upstream_connect_time],
+                            'upstream_header_time': items[pos_upstream_header_time].rstrip('\r\n'),
                         })
 
                     storage[bucket].append(row)
@@ -398,7 +403,8 @@ def process_bucket(bucket, storage, status, mbs):
             mbs['_request_length_premean'][tags] += row['request_length']
             mbs['_request_time_premean'][tags] += row['request_time']
 
-            tags = (bucket, row['vhost'], row['protocol'], row['loctag'], row['status'])
+            tags = (bucket, row['vhost'], row['protocol'],
+                    row['loctag'], row['status'])
             mbs['status'][tags] += 1
 
             if 'upstreams' in row:
@@ -410,7 +416,8 @@ def process_bucket(bucket, storage, status, mbs):
                 mbs['_upstreams_internal_redirects'][tags] += ru['internal_redirects']
                 mbs['upstreams_servers'][tags] += len(ru['servers'])
                 for upstream in ru['servers']:
-                    tags = (bucket, row['vhost'], row['protocol'], row['loctag'], upstream)
+                    tags = (bucket, row['vhost'],
+                            row['protocol'], row['loctag'], upstream)
                     mbs['upstreams_hits'][tags] += 1
                     mbs['_upstreams_response_time_premean'][tags] += ru['response_time'][upstream]
                     mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][upstream]
@@ -425,42 +432,48 @@ def process_bucket(bucket, storage, status, mbs):
 
 def mbspostprocess(mbs):
     if mbs['gzip_count']:
-        for k, v in mbs['_gzip_ratio_premean'].items():
+        for k, v in list(mbs['_gzip_ratio_premean'].items()):
             mbs['gzip_ratio_mean'][k] = v / mbs['gzip_count'][k]
 
     if mbs['hits']:
-        for k, v in mbs['_request_length_premean'].items():
+        for k, v in list(mbs['_request_length_premean'].items()):
             mbs['request_length_mean'][k] = v / mbs['hits'][k]
 
-        for k, v in mbs['_request_time_premean'].items():
+        for k, v in list(mbs['_request_time_premean'].items()):
             mbs['request_time_mean'][k] = v / mbs['hits'][k]
 
-        for k, v in mbs['hits'].items():
+        for k, v in list(mbs['hits'].items()):
             if mbs['gzip_count'] and v:
                 mbs['gzip_count_percent'][k] = (mbs['gzip_count'][k] * 1.0) / v
             else:
                 mbs['gzip_count_percent'][k] = 0.0
 
     if mbs['upstreams_hits']:
-        for k, v in mbs['_upstreams_response_time_premean'].items():
-            mbs['upstreams_response_time_mean'][k] = v / mbs['upstreams_hits'][k]
+        for k, v in list(mbs['_upstreams_response_time_premean'].items()):
+            mbs['upstreams_response_time_mean'][k] = v / \
+                mbs['upstreams_hits'][k]
 
-        for k, v in mbs['_upstreams_connect_time_premean'].items():
-            mbs['upstreams_connect_time_mean'][k] = v / mbs['upstreams_hits'][k]
+        for k, v in list(mbs['_upstreams_connect_time_premean'].items()):
+            mbs['upstreams_connect_time_mean'][k] = v / \
+                mbs['upstreams_hits'][k]
 
-        for k, v in mbs['_upstreams_header_time_premean'].items():
+        for k, v in list(mbs['_upstreams_header_time_premean'].items()):
             mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
 
-        for k, v in mbs['_upstreams_servers_contacted'].items():
-            mbs['upstreams_servers_contacted_per_hit'][k] = float(v) / mbs['hits_with_upstream'][k]
+        for k, v in list(mbs['_upstreams_servers_contacted'].items()):
+            mbs['upstreams_servers_contacted_per_hit'][k] = float(
+                v) / mbs['hits_with_upstream'][k]
 
-        for k, v in mbs['_upstreams_internal_redirects'].items():
-            mbs['upstreams_internal_redirects_per_hit'][k] = float(v) / mbs['hits_with_upstream'][k]
+        for k, v in list(mbs['_upstreams_internal_redirects'].items()):
+            mbs['upstreams_internal_redirects_per_hit'][k] = float(
+                v) / mbs['hits_with_upstream'][k]
+
 
 def save_obj(obj, filepath):
     with open(filepath, 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
         logger.debug("save_obj(): saved to %r" % filepath)
+
 
 def load_obj(filepath):
     with open(filepath, 'rb') as f:
@@ -470,26 +483,26 @@ def load_obj(filepath):
 
 def bucket2time(bucket, status):
     d = datetime.datetime.utcfromtimestamp(
-            bucket*status['bucket_duration']
+        bucket*status['bucket_duration']
     )
     return d.isoformat() + 'Z'
 
+
 def mbs2influx(mbs, status):
-    extra_tags = dict()
     points = []
-    for measurement, tagnames in mbs_tags.items():
-        if not measurement in mbs:
+    for measurement, tagnames in list(mbs_tags.items()):
+        if measurement not in mbs:
             continue
-        for tags, value in mbs[measurement].items():
-            influxtags = dict(zip(tagnames, tags[1:]))
-            for k, v in influxtags.items():
+        for tags, value in list(mbs[measurement].items()):
+            influxtags = dict(list(zip(tagnames, tags[1:])))
+            for k, v in list(influxtags.items()):
                 if k == 'protocol':
                     if v == 's':
                         influxtags[k] = 'https'
                     else:
                         influxtags[k] = 'http'
                 influxtags[k] = str(v)
-            fields = { 'value': value}
+            fields = {'value': value}
             points.append({
                 "measurement": measurement,
                 "tags": influxtags,
@@ -513,6 +526,7 @@ def influxdb_client(options):
     client.create_database(database)
     return client
 
+
 def influxdb_send(client, points, tags, options):
     npoints = len(points)
     if npoints:
@@ -521,11 +535,12 @@ def influxdb_send(client, points, tags, options):
         logger.debug(points[0])
         if options.dry_run:
             logger.debug("Dry run")
-            print(json.dumps(points, indent=4, sort_keys=True))
+            print((json.dumps(points, indent=4, sort_keys=True)))
             return True
         return client.write_points(points, tags=tags, time_precision='m',
                                    batch_size=options.influx_batch_size)
     return True
+
 
 class LockingError(Exception):
     """ Exception raised for errors creating or destroying lockfiles. """
@@ -558,9 +573,10 @@ def end_locking(lockfile_fd, lockfile_name):
     """ Release a lock via a provided file descriptor. """
     try:
         if options.locker == 'portalocker':
-            portalocker.unlock(lockfile_fd) # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
+            # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
+            portalocker.unlock(lockfile_fd)
         else:
-            if platform.system() == "SunOS": # GH issue #17
+            if platform.system() == "SunOS":  # GH issue #17
                 fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
             else:
                 fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
@@ -571,13 +587,14 @@ def end_locking(lockfile_fd, lockfile_name):
         lockfile_fd.close()
         os.unlink(lockfile_name)
     except OSError as e:
-        raise LockingError("Cannot unlink %s" % lockfile_name)
+        raise LockingError("Cannot unlink %s: %s" % (lockfile_name, e))
 
     logger.debug("Unlocking successful")
     return
 
+
 class SafeFile(object):
-    def __init__(self, workdir, identifier, suffix = ''):
+    def __init__(self, workdir, identifier, suffix=''):
         self.identifier = identifier
         self.suffix = suffix
         self.sane_filename = re.sub(r'\W', '_', self.identifier + self.suffix)
@@ -605,10 +622,11 @@ class SafeFile(object):
         try:
             self.main2old()
             os.rename(self.tmp, self.main)
-            logger.debug("tmp2main(): Renamed %r to %r" % (self.tmp, self.main))
+            logger.debug("tmp2main(): Renamed %r to %r" %
+                         (self.tmp, self.main))
         except Exception as e:
             logger.error("tmp2main(): failed: %r -> %r %s" % (self.tmp, self.main,
-                                                          str(e)))
+                                                              str(e)))
             raise
 
     def tmpclean(self):
@@ -624,11 +642,12 @@ class SafeFile(object):
         if os.path.isfile(self.main):
             try:
                 shutil.copy2(self.main, self.tmp)
-                logger.debug("main2tmp(): Copied %r to %r" % (self.main, self.tmp))
+                logger.debug("main2tmp(): Copied %r to %r" %
+                             (self.main, self.tmp))
             except Exception as e:
                 logger.error("main2tmp(): failed: %r -> %r %s" % (self.main,
-                                                                 self.tmp,
-                                                                 str(e)))
+                                                                  self.tmp,
+                                                                  str(e)))
                 raise
 
     def remove_main(self):
@@ -647,10 +666,10 @@ def read_config(conf_path):
         return json.load(f)
 
 
-description= \
-"""Tail and parse a formatted nginx log file, sending results to InfluxDB."""
+description = \
+    """Tail and parse a formatted nginx log file, sending results to InfluxDB."""
 epilog = \
-"""
+    """
 To use add following to http section of your nginx configuration:
 
   log_format stats
@@ -750,17 +769,17 @@ common = parser.add_argument_group('common arguments')
 common.add_argument('-c', '--config', action='append', metavar='FILE',
                     help="Specify json config file(s)")
 common.add_argument('-d', '--datacenter',
-                   help="string to use as 'dc' tag")
+                    help="string to use as 'dc' tag")
 common.add_argument('-H', '--hostname',
-                   help="string to use as 'host' tag")
+                    help="string to use as 'host' tag")
 common.add_argument('-l', '--log-dir', action='store',
                     help='Where to store the stats.parser logfile.  Default location is workdir')
 common.add_argument('-n', '--name',
-                   help="string to use as 'name' tag")
+                    help="string to use as 'name' tag")
 common.add_argument('-m', '--max-lines', type=int,
                     help="maximum number of lines to process")
 common.add_argument('-w', '--workdir',
-                   help="directory where offset/status are stored")
+                    help="directory where offset/status are stored")
 common.add_argument('-y', '--dry-run', action='store_true',
                     help='Parse the log file but send stats to standard output')
 common.add_argument('-q', '--quiet', action='count',
@@ -768,40 +787,40 @@ common.add_argument('-q', '--quiet', action='count',
 
 influx = parser.add_argument_group('influxdb arguments')
 influx.add_argument('--influx-host',
-                   help="influxdb host")
+                    help="influxdb host")
 influx.add_argument('--influx-port', type=int,
-                   help="influxdb port")
+                    help="influxdb port")
 influx.add_argument('--influx-username',
-                   help="influxdb username")
+                    help="influxdb username")
 influx.add_argument('--influx-password',
-                   help="influxdb password")
+                    help="influxdb password")
 influx.add_argument('--influx-database',
-                   help="influxdb database")
+                    help="influxdb database")
 influx.add_argument('--influx-timeout', type=int,
-                   help="influxdb timeout")
+                    help="influxdb timeout")
 influx.add_argument('--influx-batch-size', type=int,
-                   help="number of points to send per batch")
+                    help="number of points to send per batch")
 
 expert = parser.add_argument_group('expert arguments')
 expert.add_argument('-D', '--debug', action='store_true',
                     help="Enable debug mode")
 expert.add_argument('--influx-drop-database', action='store_true',
-                   help="drop existing InfluxDB database, use with care")
+                    help="drop existing InfluxDB database, use with care")
 expert.add_argument('--locker', choices=('fcntl', 'portalocker'),
 
                     help="type of lock to use")
 expert.add_argument('--lookback-factor', type=int,
-                   help="number of buckets to wait before sending any data")
+                    help="number of buckets to wait before sending any data")
 expert.add_argument('--startover', action='store_true',
-                   help="ignore all status/offset, like a first run")
+                    help="ignore all status/offset, like a first run")
 expert.add_argument('--do-not-skip-to-end', action='store_true',
-                   help="do not skip to end on first run")
+                    help="do not skip to end on first run")
 expert.add_argument('--bucket-duration', type=int,
-                   help="duration for each bucket in seconds")
+                    help="duration for each bucket in seconds")
 expert.add_argument('--log-conf', action='store',
                     help='Logging configuration file. None by default')
 expert.add_argument('--dump-config', action='store_true',
-                   help="dump config as json to stdout")
+                    help="dump config as json to stdout")
 expert.add_argument('--syslog', action='store_true',
                     help="Log to syslog")
 expert.add_argument('--send-failure-fifo-size', type=int,
@@ -811,9 +830,8 @@ expert.add_argument('--simulate-send-failure', action='store_true',
 
 options = parser.parse_args(remaining_argv)
 if options.dump_config:
-    print(json.dumps(vars(options), indent=4, sort_keys=True))
+    print((json.dumps(vars(options), indent=4, sort_keys=True)))
     sys.exit(0)
-#print(options)
 
 log_dir = options.log_dir
 if not log_dir:
@@ -821,7 +839,8 @@ if not log_dir:
 
 logger = logging.getLogger('stats.parser')
 if options.syslog:
-    hdlr = logging.handlers.SysLogHandler(address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_SYSLOG)
+    hdlr = logging.handlers.SysLogHandler(
+        address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_SYSLOG)
     formatter = logging.Formatter('%(name)s: %(message)s')
     hdlr.setFormatter(formatter)
 else:
@@ -829,17 +848,19 @@ else:
     # Uses appending log file, rotated at 100 MB, keeping 5.
     if (not os.path.isdir(log_dir)):
         os.mkdir(log_dir)
-    formatter = logging.Formatter('%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
-    hdlr = logging.handlers.RotatingFileHandler('%s/stats.parser.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
+    formatter = logging.Formatter(
+        '%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
+    hdlr = logging.handlers.RotatingFileHandler(
+        '%s/stats.parser.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
     hdlr.setFormatter(formatter)
 
 logger.addHandler(hdlr)
 logger.setLevel(logging.INFO)
 
-if (options.log_conf):
-     logging.config.fileConfig(options.log_conf)
+if options.log_conf:
+    logging.config.fileConfig(options.log_conf)
 
-if (options.debug):
+if options.debug:
     logger.setLevel(logging.DEBUG)
 
 if not options.quiet:
@@ -858,7 +879,6 @@ if options.locker == 'portalocker':
 else:
     import fcntl
     lock_exception_klass = IOError
-
 
 
 workdir = os.path.abspath(options.workdir)
@@ -880,10 +900,12 @@ except LockingError as e:
     logger.warning(msg)
     sys.exit(1)
 
+
 def cleanup():
     files['offset'].tmpclean()
     files['status'].tmpclean()
     end_locking(lockfile, files['lock'].main)
+
 
 def finalize():
     files['offset'].tmp2main()
@@ -910,42 +932,44 @@ try:
         status = {}
 
     save = False
-    if not 'last_msec' in status:
+    if 'last_msec' not in status:
         status['last_msec'] = 0
         save = True
-    if not 'leftover' in status:
+    if 'leftover' not in status:
         status['leftover'] = None
         save = True
-    if not 'bucket_duration' in status:
+    if 'bucket_duration' not in status:
         status['bucket_duration'] = options.bucket_duration
         save = True
-    if not 'lookback_factor' in status:
+    if 'lookback_factor' not in status:
         status['lookback_factor'] = options.lookback_factor
         save = True
-    if not 'saved_points' in status:
+    if 'saved_points' not in status:
         status['saved_points'] = deque([], options.send_failure_fifo_size)
         save = True
     if save:
         save_obj(status, files['status'].tmp)
 
-    if (status['leftover'] is not None and len(status['leftover']) > 0):
+    if status['leftover'] is not None and len(status['leftover']) > 0:
         exit = False
         msg = 'Error:'
         if status['bucket_duration'] != options.bucket_duration:
             msg += (" Bucket duration mismatch %d vs %d (set via option)" %
-                  (status['bucket_duration'], options.bucket_duration))
+                    (status['bucket_duration'], options.bucket_duration))
             exit = True
         if status['lookback_factor'] != options.lookback_factor:
             msg += (" Lookback factor mismatch %d vs %d (set via option)" %
-                  (status['lookback_factor'], options.lookback_factor))
+                    (status['lookback_factor'], options.lookback_factor))
             exit = True
         if exit:
-            msg += (" If you know what you are doing, remove status file %s" % files['status'].main)
+            msg += (" If you know what you are doing, remove status file %s" %
+                    files['status'].main)
             logger.error(msg)
             print(msg)
             sys.exit(1)
 
-    mbs, leftover, last_msec, parsed_lines,skipped_lines = parsefile(pygtail, status, options)
+    mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(
+        pygtail, status, options)
     status['leftover'] = leftover
     status['last_msec'] = last_msec
 
@@ -1002,7 +1026,7 @@ except KeyboardInterrupt:
         logger.info(msg)
     retcode = 1
 except SystemExit as e:
-    raise
+    raise e
 except Exception as e:
     msg = "Exception caught at %s: %s" % (lineno(), e)
     print(msg)
