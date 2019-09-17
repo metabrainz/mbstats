@@ -41,12 +41,6 @@
 # For a full description of the license, please visit
 # http://www.gnu.org/licenses/gpl.txt
 #
-
-
-from collections import (defaultdict, deque)
-from pygtail import Pygtail
-from time import time
-
 import argparse
 import datetime
 import inspect
@@ -64,14 +58,22 @@ import sys
 import traceback
 
 
+from collections import (defaultdict, deque)
 from enum import IntEnum, unique
 try:
     from influxdb import InfluxDBClient
     has_influxdb = True
 except ImportError:
     has_influxdb = False
+from time import time
+try:
+    from pygtail import Pygtail
+except ImportError:
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'pygtail'))
+    from pygtail import Pygtail
 
 script_start_time = time()
+
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
 @unique
