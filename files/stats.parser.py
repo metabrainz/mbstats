@@ -68,24 +68,6 @@ import traceback
 script_start_time = time()
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
-fieldnames = [
-    'version',
-    'msec',
-    'vhost',
-    'protocol',
-    'loctag',
-    'status',
-    'bytes_sent',
-    'gzip_ratio',
-    'request_length',
-    'request_time',
-    'upstream_addr',
-    'upstream_status',
-    'upstream_response_time',
-    'upstream_connect_time',
-    'upstream_header_time',
-]
-
 pos_version = 0
 pos_msec = 1
 pos_vhost = 2
