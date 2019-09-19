@@ -540,65 +540,73 @@ class LockingError(Exception):
     pass
 
 
-def start_locking(lockfile_name, locker='portalocker', logger=None):
-    """ Acquire a lock via a provided lockfile filename. """
-    if os.path.exists(lockfile_name):
-        raise LockingError("Lock file (%s) already exists." % lockfile_name)
+class Locker:
 
-    f = open(lockfile_name, 'w')
+    def __init__(self, lockfile_name, locker='portalocker', logger=None):
+        self.lockfile_name = lockfile_name
+        self.locker = locker
+        self.logger = logger
+        self.logfile_fd = None
+        self.lock()
 
-    if locker == 'portalocker':
-        import portalocker
+    def lock(self):
+        """ Acquire a lock via a provided lockfile filename. """
+        if os.path.exists(self.lockfile_name):
+            raise LockingError("Lock file (%s) already exists." % self.lockfile_name)
+
+        self.lockfile_fd = open(self.lockfile_name, 'w')
+
+        if self.locker == 'portalocker':
+            import portalocker
+            try:
+                portalocker.lock(self.lockfile_fd, portalocker.LOCK_EX | portalocker.LOCK_NB)
+                self.lockfile_fd.write("%s" % os.getpid())
+            except portalocker.LockException as e:
+                raise LockingError("Cannot acquire lock on (%s): %s" %
+                                   (self.lockfile_name, e))
+        else:
+            import fcntl
+            try:
+                fcntl.flock(self.lockfile_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.lockfile_fd.write("%s" % os.getpid())
+            except IOError as e:
+                raise LockingError("Cannot acquire lock on (%s): %s" %
+                                   (self.lockfile_name, e))
+
+        if self.logger is not None:
+            self.logger.debug("Locking successful")
+
+
+    def unlock(self):
+        """ Release a lock via a provided file descriptor. """
+
+        if self.locker == 'portalocker':
+            import portalocker
+            try:
+                # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
+                portalocker.unlock(self.lockfile_fd)
+            except portalocker.LockException as e:
+                raise LockingError("Cannot release lock on (%s): %s" %
+                                   (self.lockfile_name, e))
+        else:
+            import fcntl
+            try:
+                if platform.system() == "SunOS":  # GH issue #17
+                    fcntl.flock(self.lockfile_fd, fcntl.LOCK_UN)
+                else:
+                    fcntl.flock(self.lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
+            except IOError as e:
+                raise LockingError("Cannot release lock on (%s): %s" %
+                                   (self.lockfile_name, e))
+
         try:
-            portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
-            f.write("%s" % os.getpid())
-        except portalocker.LockException as e:
-            raise LockingError("Cannot acquire lock on (%s): %s" %
-                               (lockfile_name, e))
-    else:
-        import fcntl
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            f.write("%s" % os.getpid())
-        except IOError as e:
-            raise LockingError("Cannot acquire lock on (%s): %s" %
-                               (lockfile_name, e))
+            self.lockfile_fd.close()
+            os.unlink(self.lockfile_name)
+        except OSError as e:
+            raise LockingError("Cannot unlink %s: %s" % (self.lockfile_name, e))
 
-    if logger is not None:
-        logger.debug("Locking successful")
-    return f
-
-
-def end_locking(lockfile_fd, lockfile_name, locker='portalocker', logger=None):
-    """ Release a lock via a provided file descriptor. """
-
-    if locker == 'portalocker':
-        import portalocker
-        try:
-            # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
-            portalocker.unlock(lockfile_fd)
-        except portalocker.LockException as e:
-            raise LockingError("Cannot release lock on (%s): %s" %
-                               (lockfile_name, e))
-    else:
-        import fcntl
-        try:
-            if platform.system() == "SunOS":  # GH issue #17
-                fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
-            else:
-                fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
-        except IOError as e:
-            raise LockingError("Cannot release lock on (%s): %s" %
-                               (lockfile_name, e))
-
-    try:
-        lockfile_fd.close()
-        os.unlink(lockfile_name)
-    except OSError as e:
-        raise LockingError("Cannot unlink %s: %s" % (lockfile_name, e))
-
-    if logger is not None:
-        logger.debug("Unlocking successful")
+        if self.logger is not None:
+            self.logger.debug("Unlocking successful")
 
 
 class SafeFile(object):
@@ -898,8 +906,7 @@ def main():
     # simultaneuosly. This will happen if the log parsing takes more time than
     # the cron period.
     try:
-        lockfile = start_locking(files['lock'].main, locker=options.locker,
-                                 logger=logger)
+        lock = Locker(files['lock'].main, locker=options.locker, logger=logger)
     except LockingError as e:
         msg = "Locking error: %s" % e
         print(msg)
@@ -910,9 +917,7 @@ def main():
     def cleanup():
         files['offset'].tmpclean()
         files['status'].tmpclean()
-        end_locking(lockfile, files['lock'].main, locker=options.locker,
-                    logger=logger)
-
+        lock.unlock()
 
     def finalize():
         files['offset'].tmp2main()
@@ -1058,9 +1063,8 @@ def main():
 
 
     try:
-        end_locking(lockfile, files['lock'].main, locker=options.locker,
-                    logger=locker)
-    except:
+        lock.unlock()
+    except LockingError:
         pass
 
     sys.exit(retcode)
