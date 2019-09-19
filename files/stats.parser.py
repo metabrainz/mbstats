@@ -540,41 +540,56 @@ class LockingError(Exception):
     pass
 
 
-def start_locking(lockfile_name):
+def start_locking(lockfile_name, locker='portalocker', logger=None):
     """ Acquire a lock via a provided lockfile filename. """
     if os.path.exists(lockfile_name):
         raise LockingError("Lock file (%s) already exists." % lockfile_name)
 
     f = open(lockfile_name, 'w')
 
-    try:
-        if options.locker == 'portalocker':
+    if locker == 'portalocker':
+        import portalocker
+        try:
             portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
-        else:
+            f.write("%s" % os.getpid())
+        except portalocker.LockException as e:
+            raise LockingError("Cannot acquire lock on (%s): %s" %
+                               (lockfile_name, e))
+    else:
+        import fcntl
+        try:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        f.write("%s" % os.getpid())
-    except lock_exception_klass:
-        # Would be better to also check the pid in the lock file and remove the
-        # lock file if that pid no longer exists in the process table.
-        raise LockingError("Cannot acquire logster lock (%s)" % lockfile_name)
+            f.write("%s" % os.getpid())
+        except IOError as e:
+            raise LockingError("Cannot acquire lock on (%s): %s" %
+                               (lockfile_name, e))
 
-    logger.debug("Locking successful")
+    if logger is not None:
+        logger.debug("Locking successful")
     return f
 
 
-def end_locking(lockfile_fd, lockfile_name):
+def end_locking(lockfile_fd, lockfile_name, locker='portalocker', logger=None):
     """ Release a lock via a provided file descriptor. """
-    try:
-        if options.locker == 'portalocker':
+
+    if locker == 'portalocker':
+        import portalocker
+        try:
             # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
             portalocker.unlock(lockfile_fd)
-        else:
+        except portalocker.LockException as e:
+            raise LockingError("Cannot release lock on (%s): %s" %
+                               (lockfile_name, e))
+    else:
+        import fcntl
+        try:
             if platform.system() == "SunOS":  # GH issue #17
                 fcntl.flock(lockfile_fd, fcntl.LOCK_UN)
             else:
                 fcntl.flock(lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
-    except lock_exception_klass:
-        raise LockingError("Cannot release logster lock (%s)" % lockfile_name)
+        except IOError as e:
+            raise LockingError("Cannot release lock on (%s): %s" %
+                               (lockfile_name, e))
 
     try:
         lockfile_fd.close()
@@ -582,8 +597,8 @@ def end_locking(lockfile_fd, lockfile_name):
     except OSError as e:
         raise LockingError("Cannot unlink %s: %s" % (lockfile_name, e))
 
-    logger.debug("Unlocking successful")
-    return
+    if logger is not None:
+        logger.debug("Unlocking successful")
 
 
 class SafeFile(object):
@@ -868,13 +883,6 @@ def main():
         parser.print_usage()
         sys.exit(1)
 
-    if options.locker == 'portalocker':
-        import portalocker
-        lock_exception_klass = portalocker.LockException
-    else:
-        import fcntl
-        lock_exception_klass = IOError
-
     if not has_influxdb:
         options.dry_run = True
 
@@ -890,7 +898,8 @@ def main():
     # simultaneuosly. This will happen if the log parsing takes more time than
     # the cron period.
     try:
-        lockfile = start_locking(files['lock'].main)
+        lockfile = start_locking(files['lock'].main, locker=options.locker,
+                                 logger=logger)
     except LockingError as e:
         msg = "Locking error: %s" % e
         print(msg)
@@ -901,7 +910,8 @@ def main():
     def cleanup():
         files['offset'].tmpclean()
         files['status'].tmpclean()
-        end_locking(lockfile, files['lock'].main)
+        end_locking(lockfile, files['lock'].main, locker=options.locker,
+                    logger=logger)
 
 
     def finalize():
@@ -1048,7 +1058,8 @@ def main():
 
 
     try:
-        end_locking(lockfile, files['lock'].main)
+        end_locking(lockfile, files['lock'].main, locker=options.locker,
+                    logger=locker)
     except:
         pass
 
