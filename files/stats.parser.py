@@ -460,15 +460,17 @@ def mbspostprocess(mbs):
                 v) / mbs['hits_with_upstream'][k]
 
 
-def save_obj(obj, filepath):
+def save_obj(obj, filepath, logger=None):
     with open(filepath, 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-        logger.debug("save_obj(): saved to %r" % filepath)
+        if logger is not None:
+            logger.debug("save_obj(): saved to %r" % filepath)
 
 
-def load_obj(filepath):
+def load_obj(filepath, logger=None):
     with open(filepath, 'rb') as f:
-        logger.debug("load_obj(): loading from %r" % filepath)
+        if logger is not None:
+            logger.debug("load_obj(): loading from %r" % filepath)
         return pickle.load(f)
 
 
@@ -939,7 +941,7 @@ def main():
         pygtail = Pygtail(filename, offset_file=files['offset'].tmp)
 
         try:
-            status = load_obj(files['status'].main)
+            status = load_obj(files['status'].main, logger=logger)
         except IOError:
             status = {}
 
@@ -960,7 +962,7 @@ def main():
             status['saved_points'] = deque([], options.send_failure_fifo_size)
             save = True
         if save:
-            save_obj(status, files['status'].tmp)
+            save_obj(status, files['status'].tmp, logger=logger)
 
         if status['leftover'] is not None and len(status['leftover']) > 0:
             exit = False
@@ -1030,7 +1032,7 @@ def main():
                                  options.send_failure_fifo_size))
                     pass
 
-        save_obj(status, files['status'].tmp)
+        save_obj(status, files['status'].tmp, logger=logger)
     except KeyboardInterrupt:
         if options.quiet < 2:
             msg = "Exiting on keyboard interrupt"
