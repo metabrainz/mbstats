@@ -512,11 +512,10 @@ class InfluxBackend:
         logger = self.logger
         if points is None:
             points = self.points
-        npoints = len(points)
-        if npoints:
+        if points:
             if logger:
                 if options.quiet < 2:
-                    logger.info("Sending %d points" % npoints)
+                    logger.info("Sending %d points" % len(points))
                 logger.debug(points[0])
             if not self.client:
                 if logger:
