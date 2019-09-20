@@ -94,7 +94,7 @@ class PosField(IntEnum):
     upstream_header_time = 14
 
 
-mbs_tags = {
+MBS_TAGS = {
     'hits': ('vhost', 'protocol', 'loctag'),
     'hits_with_upstream': ('vhost', 'protocol', 'loctag'),
     'status': ('vhost', 'protocol', 'loctag', 'status'),
@@ -529,7 +529,7 @@ class InfluxBackend:
 
     def add_points(self, mbs, status):
         self.points = []
-        for measurement, tagnames in list(mbs_tags.items()):
+        for measurement, tagnames in list(MBS_TAGS.items()):
             if measurement not in mbs:
                 continue
             for tags, value in list(mbs[measurement].items()):
