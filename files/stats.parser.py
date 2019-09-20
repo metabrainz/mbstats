@@ -481,60 +481,73 @@ def bucket2time(bucket, status):
     return d.isoformat() + 'Z'
 
 
-def mbs2influx(mbs, status):
-    points = []
-    for measurement, tagnames in list(mbs_tags.items()):
-        if measurement not in mbs:
-            continue
-        for tags, value in list(mbs[measurement].items()):
-            influxtags = dict(list(zip(tagnames, tags[1:])))
-            for k, v in list(influxtags.items()):
-                if k == 'protocol':
-                    if v == 's':
-                        influxtags[k] = 'https'
-                    else:
-                        influxtags[k] = 'http'
-                influxtags[k] = str(v)
-            fields = {'value': value}
-            points.append({
-                "measurement": measurement,
-                "tags": influxtags,
-                "time": bucket2time(tags[0], status),
-                "fields": fields
-            })
-    return points
+class InfluxBackend:
 
+    def __init__(self, options, logger=None):
+        self.options = options
+        self.logger = logger
+        self.points = []
+        self.initialize()
 
-def influxdb_client(options):
-    if options.dry_run:
-        return None
-    database = options.influx_database
-    client = InfluxDBClient(host=options.influx_host,
-                            port=options.influx_port,
-                            username=options.influx_username,
-                            password=options.influx_password,
-                            database=database,
-                            timeout=options.influx_timeout)
-    if options.influx_drop_database:
-        client.drop_database(database)
+    def initialize(self):
+        options = self.options
+        if options.dry_run:
+            self.client = None
+            return
+        database = options.influx_database
+        client = InfluxDBClient(host=options.influx_host,
+                                port=options.influx_port,
+                                username=options.influx_username,
+                                password=options.influx_password,
+                                database=database,
+                                timeout=options.influx_timeout)
+        if options.influx_drop_database:
+            client.drop_database(database)
 
-    client.create_database(database)
-    return client
+        client.create_database(database)
+        self.client = client
 
+    def send_points(self, tags, points=None):
+        options = self.options
+        logger = self.logger
+        if points is None:
+            points = self.points
+        npoints = len(points)
+        if npoints:
+            if logger:
+                if options.quiet < 2:
+                    logger.info("Sending %d points" % npoints)
+                logger.debug(points[0])
+            if not self.client:
+                if logger:
+                    logger.debug("Dry run")
+                print((json.dumps(points, indent=4, sort_keys=True)))
+                return True
+            return self.client.write_points(points, tags=tags, time_precision='m',
+                                            batch_size=options.influx_batch_size)
+        return True
 
-def influxdb_send(client, points, tags, options):
-    npoints = len(points)
-    if npoints:
-        if options.quiet < 2:
-            logger.info("Sending %d points" % npoints)
-        logger.debug(points[0])
-        if options.dry_run or not client:
-            logger.debug("Dry run")
-            print((json.dumps(points, indent=4, sort_keys=True)))
-            return True
-        return client.write_points(points, tags=tags, time_precision='m',
-                                   batch_size=options.influx_batch_size)
-    return True
+    def add_points(self, mbs, status):
+        self.points = []
+        for measurement, tagnames in list(mbs_tags.items()):
+            if measurement not in mbs:
+                continue
+            for tags, value in list(mbs[measurement].items()):
+                influxtags = dict(list(zip(tagnames, tags[1:])))
+                for k, v in list(influxtags.items()):
+                    if k == 'protocol':
+                        if v == 's':
+                            influxtags[k] = 'https'
+                        else:
+                            influxtags[k] = 'http'
+                    influxtags[k] = str(v)
+                fields = {'value': value}
+                self.points.append({
+                    "measurement": measurement,
+                    "tags": influxtags,
+                    "time": bucket2time(tags[0], status),
+                    "fields": fields
+                })
 
 
 class LockingError(Exception):
@@ -939,7 +952,7 @@ def main():
     skipped_lines = 0
     res = False
     try:
-        influxdb = influxdb_client(options)
+        backend = InfluxBackend(options, logger=logger)
 
         files['offset'].main2tmp()
 
@@ -992,8 +1005,8 @@ def main():
         status['leftover'] = leftover
         status['last_msec'] = last_msec
 
-        points = mbs2influx(mbs, status)
-        if points or status['saved_points']:
+        backend.add_points(mbs, status)
+        if backend.points or status['saved_points']:
             tags = {
                 'host': options.hostname,
                 'name': options.name or filename,
@@ -1010,7 +1023,7 @@ def main():
                                 len(to_resend))
                     if options.simulate_send_failure:
                         raise Exception('Simulating send failure (resend)')
-                    if influxdb_send(influxdb, to_resend, tags, options):
+                    if backend.send_points(tags, points=to_resend):
                         status['saved_points'].clear()
                 except Exception as e:
                     msg = "Influx send failed again: %s: %s" % (lineno(), e)
@@ -1019,11 +1032,11 @@ def main():
                     logger.error(msg)
                     pass
 
-            if points:
+            if backend.points:
                 try:
                     if options.simulate_send_failure:
                         raise Exception('Simulating send failure')
-                    ret = influxdb_send(influxdb, points, tags, options)
+                    ret = backend.send_points(tags)
                     if not ret:
                         raise Exception('influx_send failed')
                 except Exception as e:
@@ -1031,7 +1044,7 @@ def main():
                     print(msg)
                     traceback.print_exc()
                     logger.error(msg)
-                    status['saved_points'].append(points)
+                    status['saved_points'].append(backend.points)
                     logger.info("Failed to send, saving points for later %d/%d" %
                                 (len(status['saved_points']),
                                  options.send_failure_fifo_size))
