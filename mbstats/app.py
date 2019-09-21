@@ -211,7 +211,7 @@ class ParseSkip(Exception):
     pass
 
 
-def parsefile(tailer, status, options):
+def parsefile(tailer, status, options, logger=None):
     parsed_lines = 0
     skipped_lines = 0
     first_run = False
@@ -224,21 +224,24 @@ def parsefile(tailer, status, options):
         ignore_before = 0
     else:
         ignore_before = status['last_msec'] - bucket_duration * lookback_factor
-    logger.debug(
-        "max_lines=%d bucket_duration=%d lookback_factor=%d ignore_before=%f" %
-        (max_lines, bucket_duration, lookback_factor, ignore_before))
+    if logger:
+        logger.debug(
+            "max_lines=%d bucket_duration=%d lookback_factor=%d ignore_before=%f" %
+            (max_lines, bucket_duration, lookback_factor, ignore_before))
     last_msec = 0
     last_bucket = 0
     if status['leftover'] is not None:
-        logger.debug("Examining %d leftovers" % len(status['leftover']))
+        if logger:
+            logger.debug("Examining %d leftovers" % len(status['leftover']))
         storage = status['leftover']
-        if options.quiet < 2:
+        if logger and options.quiet < 2:
             for bucket in storage:
                 logger.info("Previous leftover bucket: %s %d" %
                             (bucket2time(bucket, status), len(storage[bucket])))
     else:
         storage = defaultdict(deque)
-        logger.info("First run")
+        if logger:
+            logger.info("First run")
         first_run = not options.do_not_skip_to_end
     bucket = 0
     if first_run:
@@ -262,8 +265,9 @@ def parsefile(tailer, status, options):
         # ensure we start on an entire bucket, so values are correct
         last_msec = (bucket + lookback_factor) * bucket_duration
         skipped_lines = parsed_lines
-        logger.info("End of first run: bucket=%d last_msec=%f skipped=%d" %
-                    (bucket, last_msec, skipped_lines))
+        if logger:
+            logger.info("End of first run: bucket=%d last_msec=%f skipped=%d" %
+                        (bucket, last_msec, skipped_lines))
     else:
         try:
             for line in tailer:
@@ -307,7 +311,7 @@ def parsefile(tailer, status, options):
                     ready_to_process = bucket - lookback_factor
 
                     if storage[ready_to_process]:
-                        if options.quiet < 2:
+                        if logger and options.quiet < 2:
                             logger.info("Processing bucket: %s %d" %
                                         (bucket2time(ready_to_process, status),
                                          len(storage[ready_to_process])))
@@ -316,13 +320,14 @@ def parsefile(tailer, status, options):
                     skipped_lines += 1
                     pass
                 except Exception as e:
-                    logger.error("%s: %s", line)
+                    if logger:
+                        logger.error("%s: %s", line)
                     raise
                 if parsed_lines == max_lines:
                     raise ParseEnd
         except ParseEnd:
             pass
-        if skipped_lines and options.quiet < 2:
+        if skipped_lines and logger and options.quiet < 2:
             logger.info("Skipped %d unordered lines" % skipped_lines)
 
     tailer._update_offset_file()
@@ -332,12 +337,13 @@ def parsefile(tailer, status, options):
         if storage[bucket] and bucket >= last_bucket - lookback_factor:
             leftover[bucket] = storage[bucket]
 
-    logger.debug("Leftovers %d" % len(leftover))
-    if options.quiet < 2:
-        for bucket in leftover:
-            logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket,
-                                                                   status),
-                                                       len(leftover[bucket])))
+    if logger:
+        logger.debug("Leftovers %d" % len(leftover))
+        if options.quiet < 2:
+            for bucket in leftover:
+                logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket,
+                                                                       status),
+                                                           len(leftover[bucket])))
 
     mbspostprocess(mbs)
     return (mbs, leftover, last_msec, parsed_lines, skipped_lines)
@@ -996,8 +1002,7 @@ def main():
                 print(msg)
                 sys.exit(1)
 
-        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(
-            pygtail, status, options)
+        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger)
         status['leftover'] = leftover
         status['last_msec'] = last_msec
 
