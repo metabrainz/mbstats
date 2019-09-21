@@ -4,7 +4,7 @@ import unittest
 import tempfile
 
 
-from mbstats.app import Locker, LockingError
+from mbstats.locker import Locker, LockingError
 
 try:
     import portalocker

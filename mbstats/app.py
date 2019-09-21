@@ -67,6 +67,7 @@ except ImportError:
     has_influxdb = False
 from time import time
 from pygtail import Pygtail
+from mbstats.locker import Locker, LockingError
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
@@ -548,84 +549,6 @@ class InfluxBackend:
                     "time": bucket2time(tags[0], status),
                     "fields": fields
                 })
-
-
-class LockingError(Exception):
-    """ Exception raised for errors creating or destroying lockfiles. """
-    pass
-
-
-class Locker:
-
-    def __init__(self, lockfile_path, lock_type='fcntl', logger=None):
-        self.lockfile_path = lockfile_path
-        self.lock_type = lock_type
-        self.logger = logger
-        self.logfile_fd = None
-        self.lock()
-
-    def lock(self):
-        """ Acquire a lock via a provided lockfile filename. """
-        if os.path.exists(self.lockfile_path):
-            raise LockingError("Lock file (%s) already exists." % self.lockfile_path)
-
-        try:
-            self.lockfile_fd = open(self.lockfile_path, 'w')
-        except Exception as e:
-            raise LockingError("Lock file (%s) creation failed: %s" %
-                               (self.lockfile_path, e))
-
-        if self.lock_type == 'portalocker':
-            import portalocker
-            try:
-                portalocker.lock(self.lockfile_fd, portalocker.LOCK_EX | portalocker.LOCK_NB)
-                self.lockfile_fd.write("%s" % os.getpid())
-            except portalocker.LockException as e:
-                raise LockingError("Cannot acquire lock on (%s): %s" %
-                                   (self.lockfile_path, e))
-        else:
-            import fcntl
-            try:
-                fcntl.flock(self.lockfile_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                self.lockfile_fd.write("%s" % os.getpid())
-            except IOError as e:
-                raise LockingError("Cannot acquire lock on (%s): %s" %
-                                   (self.lockfile_path, e))
-
-        if self.logger is not None:
-            self.logger.debug("Locking successful (%s): %s" % (self.lock_type,
-                                                               self.lockfile_path))
-
-    def unlock(self):
-        """ Release a lock via a provided file descriptor. """
-
-        if self.lock_type == 'portalocker':
-            import portalocker
-            try:
-                # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
-                portalocker.unlock(self.lockfile_fd)
-            except portalocker.LockException as e:
-                raise LockingError("Cannot release lock on (%s): %s" %
-                                   (self.lockfile_path, e))
-        else:
-            import fcntl
-            try:
-                if platform.system() == "SunOS":  # GH issue #17
-                    fcntl.flock(self.lockfile_fd, fcntl.LOCK_UN)
-                else:
-                    fcntl.flock(self.lockfile_fd, fcntl.LOCK_UN | fcntl.LOCK_NB)
-            except IOError as e:
-                raise LockingError("Cannot release lock on (%s): %s" %
-                                   (self.lockfile_path, e))
-
-        try:
-            self.lockfile_fd.close()
-            os.unlink(self.lockfile_path)
-        except OSError as e:
-            raise LockingError("Cannot unlink %s: %s" % (self.lockfile_path, e))
-
-        if self.logger is not None:
-            self.logger.debug("Unlocking successful")
 
 
 class SafeFile(object):
