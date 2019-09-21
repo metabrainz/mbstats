@@ -42,10 +42,8 @@
 # http://www.gnu.org/licenses/gpl.txt
 #
 
-import sys
+from mbstats import app
 
 
 if __name__ == "__main__":
-    print(sys.path)
-    from mbstats import app
     app.main()
