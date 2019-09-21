@@ -68,12 +68,7 @@ try:
 except ImportError:
     has_influxdb = False
 from time import time
-try:
-    from pygtail import Pygtail
-except ImportError:
-    print(sys.path)
-    from .pygtail import Pygtail
-
+from pygtail import Pygtail
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
