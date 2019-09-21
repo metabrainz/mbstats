@@ -13,7 +13,6 @@ except ImportError:
     has_portalocker = False
 
 
-
 class TestLocker(unittest.TestCase):
     def setUp(self):
         # Create a temporary directory

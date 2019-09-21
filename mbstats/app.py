@@ -58,8 +58,6 @@ import sys
 import traceback
 
 
-
-
 from collections import (defaultdict, deque)
 from enum import IntEnum, unique
 try:
@@ -253,7 +251,7 @@ def parsefile(tailer, status, options):
                     msec = float(items[PosField.msec])
                     if msec > last_msec:
                         last_msec = msec
-                    bucket = int(math.ceil(msec/bucket_duration))
+                    bucket = int(math.ceil(msec / bucket_duration))
                 except ValueError as e:
                     logger.error(str(e), line)
                     raise
@@ -262,7 +260,7 @@ def parsefile(tailer, status, options):
         except ParseEnd:
             pass
         # ensure we start on an entire bucket, so values are correct
-        last_msec = (bucket+lookback_factor) * bucket_duration
+        last_msec = (bucket + lookback_factor) * bucket_duration
         skipped_lines = parsed_lines
         logger.info("End of first run: bucket=%d last_msec=%f skipped=%d" %
                     (bucket, last_msec, skipped_lines))
@@ -278,7 +276,7 @@ def parsefile(tailer, status, options):
                         raise ParseSkip
                     if msec > last_msec:
                         last_msec = msec
-                    bucket = int(math.ceil(msec/bucket_duration))
+                    bucket = int(math.ceil(msec / bucket_duration))
 
                     row = {
                         'vhost': items[PosField.vhost],
@@ -473,7 +471,7 @@ def load_obj(filepath, logger=None):
 
 def bucket2time(bucket, status):
     d = datetime.datetime.utcfromtimestamp(
-        bucket*status['bucket_duration']
+        bucket * status['bucket_duration']
     )
     return d.isoformat() + 'Z'
 
@@ -592,7 +590,6 @@ class Locker:
             self.logger.debug("Locking successful (%s): %s" % (self.lock_type,
                                                                self.lockfile_path))
 
-
     def unlock(self):
         """ Release a lock via a provided file descriptor. """
 
@@ -701,6 +698,7 @@ class SafeFile(object):
 def read_config(conf_path):
     with open(conf_path, 'r') as f:
         return json.load(f)
+
 
 def main():
     script_start_time = time()
@@ -917,9 +915,9 @@ def main():
     workdir = os.path.abspath(options.workdir)
     safefile = SafeFile(workdir, filename)
     files = {
-        'offset':   safefile.suffixed('offset'),
-        'status':   safefile.suffixed('status'),
-        'lock':     safefile.suffixed('lock')
+        'offset': safefile.suffixed('offset'),
+        'status': safefile.suffixed('status'),
+        'lock': safefile.suffixed('lock')
     }
 
     # Check for lock file so we don't run multiple copies of the same parser
@@ -933,7 +931,6 @@ def main():
         logger.warning(msg)
         sys.exit(1)
 
-
     def cleanup():
         files['offset'].tmpclean()
         files['status'].tmpclean()
@@ -942,7 +939,6 @@ def main():
     def finalize():
         files['offset'].tmp2main()
         files['status'].tmp2main()
-
 
     if options.startover:
         files['offset'].remove_main()
@@ -1080,7 +1076,6 @@ def main():
             mean_per_line = 0.0
         logger.info("duration=%ss parsed=%d skipped=%d mean_per_line=%0.3fµs" %
                     (exec_time, parsed_lines, skipped_lines, mean_per_line))
-
 
     try:
         lock.unlock()
