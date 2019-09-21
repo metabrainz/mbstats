@@ -1,3 +1,0 @@
-[submodule "files/pygtail"]
-	path = files/pygtail
-	url = https://github.com/bgreenlee/pygtail
