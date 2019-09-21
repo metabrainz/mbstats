@@ -56,7 +56,7 @@ import re
 import shutil
 import sys
 import traceback
-
+from uuid import uuid1
 
 from collections import (defaultdict, deque)
 from enum import IntEnum, unique
@@ -629,7 +629,7 @@ class SafeFile(object):
         self.sane_filename = re.sub(r'\W', '_', self.identifier + self.suffix)
         self.workdir = workdir
         self.main = os.path.join(self.workdir, self.sane_filename)
-        self.tmp = "%s.%d.tmp" % (self.main, os.getpid())
+        self.tmp = "%s.%s.tmp" % (self.main, uuid1().hex)
         self.old = "%s.old" % (self.main)
         self.lock = "%s.lock" % (self.main)
         self.logger = logger
