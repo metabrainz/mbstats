@@ -484,18 +484,34 @@ def bucket2time(bucket, status):
     return d.isoformat() + 'Z'
 
 
-class InfluxBackend:
+class Backend:
 
     def __init__(self, options, logger=None):
         self.options = options
         self.logger = logger
         self.points = []
+        self.client = None
         self.initialize()
+
+    def initialize(self):
+        raise NotImplementedError
+
+    def send_points(self, tags, points=None):
+        raise NotImplementedError
+
+    def add_points(self, mbs, status):
+        raise NotImplementedError
+
+
+class BackendDryRun(Exception):
+    pass
+
+
+class InfluxBackend(Backend):
 
     def initialize(self):
         options = self.options
         if options.dry_run:
-            self.client = None
             return
         database = options.influx_database
         client = InfluxDBClient(host=options.influx_host,
@@ -521,10 +537,8 @@ class InfluxBackend:
                     logger.info("Sending %d points" % len(points))
                 logger.debug(points[0])
             if not self.client:
-                if logger:
-                    logger.debug("Dry run")
-                print((json.dumps(points, indent=4, sort_keys=True)))
-                return True
+                dump = json.dumps(points, indent=4, sort_keys=True)
+                raise BackendDryRun(dump)
             return self.client.write_points(points, tags=tags, time_precision='m',
                                             batch_size=options.influx_batch_size)
         return True
@@ -813,7 +827,9 @@ def main():
 
         try:
             status = load_obj(files['status'].main, logger=logger)
-        except IOError:
+        except IOError as e:
+            logger.warning("Failed to load status from %s: %s" %
+                           (files['status'].main, e))
             status = {}
 
         save = False
@@ -875,8 +891,11 @@ def main():
                                 len(to_resend))
                     if options.simulate_send_failure:
                         raise Exception('Simulating send failure (resend)')
-                    if backend.send_points(tags, points=to_resend):
+                    if backend.send_points(tags, points=to_resend)
                         status['saved_points'].clear()
+                except BackendDryRun as e:
+                    print("Dry run: %s" % e)
+                    pass
                 except Exception as e:
                     msg = "Influx send failed again: %s: %s" % (lineno(), e)
                     print(msg)
@@ -891,6 +910,9 @@ def main():
                     ret = backend.send_points(tags)
                     if not ret:
                         raise Exception('influx_send failed')
+                except BackendDryRun as e:
+                    print("Dry run: %s" % e)
+                    pass
                 except Exception as e:
                     msg = "Influx send: Exception caught at %s: %s" % (lineno(), e)
                     print(msg)
