@@ -45,6 +45,13 @@
 import os.path
 import platform
 
+try:
+    import portalocker
+    has_portalocker = True
+except ImportError:
+    has_portalocker = False
+
+import fcntl
 
 class LockingError(Exception):
     """ Exception raised for errors creating or destroying lockfiles. """
@@ -71,8 +78,7 @@ class Locker:
             raise LockingError("Lock file (%s) creation failed: %s" %
                                (self.lockfile_path, e))
 
-        if self.lock_type == 'portalocker':
-            import portalocker
+        if has_portalocker and self.lock_type == 'portalocker':
             try:
                 portalocker.lock(self.lockfile_fd, portalocker.LOCK_EX | portalocker.LOCK_NB)
                 self.lockfile_fd.write("%s" % os.getpid())
@@ -80,7 +86,6 @@ class Locker:
                 raise LockingError("Cannot acquire lock on (%s): %s" %
                                    (self.lockfile_path, e))
         else:
-            import fcntl
             try:
                 fcntl.flock(self.lockfile_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.lockfile_fd.write("%s" % os.getpid())
@@ -95,8 +100,7 @@ class Locker:
     def unlock(self):
         """ Release a lock via a provided file descriptor. """
 
-        if self.lock_type == 'portalocker':
-            import portalocker
+        if has_portalocker and self.lock_type == 'portalocker':
             try:
                 # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
                 portalocker.unlock(self.lockfile_fd)
@@ -104,7 +108,6 @@ class Locker:
                 raise LockingError("Cannot release lock on (%s): %s" %
                                    (self.lockfile_path, e))
         else:
-            import fcntl
             try:
                 if platform.system() == "SunOS":  # GH issue #17
                     fcntl.flock(self.lockfile_fd, fcntl.LOCK_UN)

@@ -42,33 +42,24 @@
 # http://www.gnu.org/licenses/gpl.txt
 #
 import argparse
-import datetime
-import inspect
 import itertools
 import json
 import logging.config
 import logging.handlers
 import math
 import os.path
-import pickle
 import platform
-import re
-import shutil
 import sys
 import traceback
-from uuid import uuid1
 
 from collections import (defaultdict, deque)
 from enum import IntEnum, unique
-try:
-    from influxdb import InfluxDBClient
-    has_influxdb = True
-except ImportError:
-    has_influxdb = False
 from time import time
 from pygtail import Pygtail
 from mbstats.locker import Locker, LockingError
 from mbstats.safefile import SafeFile
+from mbstats.backends import InfluxBackend, BackendDryRun
+from mbstats.utils import lineno, save_obj, load_obj, read_config, bucket2time
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
@@ -91,27 +82,6 @@ class PosField(IntEnum):
     upstream_header_time = 14
 
 
-MBS_TAGS = {
-    'hits': ('vhost', 'protocol', 'loctag'),
-    'hits_with_upstream': ('vhost', 'protocol', 'loctag'),
-    'status': ('vhost', 'protocol', 'loctag', 'status'),
-    'bytes_sent': ('vhost', 'protocol', 'loctag'),
-    'gzip_count': ('vhost', 'protocol', 'loctag'),
-    'gzip_count_percent': ('vhost', 'protocol', 'loctag'),
-    'gzip_ratio_mean': ('vhost', 'protocol', 'loctag'),
-    'request_length_mean': ('vhost', 'protocol', 'loctag'),
-    'request_time_mean': ('vhost', 'protocol', 'loctag'),
-    'upstreams_hits': ('vhost', 'protocol', 'loctag', 'upstream'),
-    'upstreams_status': ('vhost', 'protocol', 'loctag', 'upstream', 'status'),
-    'upstreams_servers_contacted_per_hit': ('vhost', 'protocol', 'loctag'),
-    'upstreams_internal_redirects_per_hit': ('vhost', 'protocol', 'loctag'),
-    'upstreams_servers': ('vhost', 'protocol', 'loctag'),
-    'upstreams_response_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
-    'upstreams_connect_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
-    'upstreams_header_time_mean': ('vhost', 'protocol', 'loctag', 'upstream'),
-}
-
-
 def factory():
     return lambda x: x
 
@@ -121,15 +91,6 @@ types['upstream_status'] = lambda x: int(x)
 types['upstream_response_time'] = types['upstream_connect_time'] = types['upstream_header_time'] = lambda x: float(
     x)
 
-# This provides a lineno() function to make it easy to grab the line
-# number that we're on (for logging)
-# Danny Yoo (dyoo@hkn.eecs.berkeley.edu)
-# taken from http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/145297
-
-
-def lineno():
-    """Returns the current line number in our program."""
-    return inspect.currentframe().f_back.f_lineno
 
 # @profile
 
@@ -323,7 +284,7 @@ def parsefile(tailer, status, options, logger=None):
                     pass
                 except Exception as e:
                     if logger:
-                        logger.error("%s: %s", line)
+                        logger.error("%s: %s" % (line, e))
                     raise
                 if parsed_lines == max_lines:
                     raise ParseEnd
@@ -416,9 +377,9 @@ def process_bucket(bucket, storage, status, mbs):
                     mbs['_upstreams_response_time_premean'][tags] += ru['response_time'][upstream]
                     mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][upstream]
                     mbs['_upstreams_header_time_premean'][tags] += ru['header_time'][upstream]
-                    for status in ru['status'][upstream]:
+                    for status_ in ru['status'][upstream]:
                         tags = (bucket, row['vhost'], row['protocol'], row['loctag'],
-                                upstream, status)
+                                upstream, status_)
                         mbs['upstreams_status'][tags] += 1
         except IndexError:
             break
@@ -462,113 +423,6 @@ def mbspostprocess(mbs):
             mbs['upstreams_internal_redirects_per_hit'][k] = float(
                 v) / mbs['hits_with_upstream'][k]
 
-
-def save_obj(obj, filepath, logger=None):
-    with open(filepath, 'wb') as f:
-        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-        if logger is not None:
-            logger.debug("save_obj(): saved to %r" % filepath)
-
-
-def load_obj(filepath, logger=None):
-    with open(filepath, 'rb') as f:
-        if logger is not None:
-            logger.debug("load_obj(): loading from %r" % filepath)
-        return pickle.load(f)
-
-
-def bucket2time(bucket, status):
-    d = datetime.datetime.utcfromtimestamp(
-        bucket * status['bucket_duration']
-    )
-    return d.isoformat() + 'Z'
-
-
-class Backend:
-
-    def __init__(self, options, logger=None):
-        self.options = options
-        self.logger = logger
-        self.points = []
-        self.client = None
-        self.initialize()
-
-    def initialize(self):
-        raise NotImplementedError
-
-    def send_points(self, tags, points=None):
-        raise NotImplementedError
-
-    def add_points(self, mbs, status):
-        raise NotImplementedError
-
-
-class BackendDryRun(Exception):
-    pass
-
-
-class InfluxBackend(Backend):
-
-    def initialize(self):
-        options = self.options
-        if options.dry_run:
-            return
-        database = options.influx_database
-        client = InfluxDBClient(host=options.influx_host,
-                                port=options.influx_port,
-                                username=options.influx_username,
-                                password=options.influx_password,
-                                database=database,
-                                timeout=options.influx_timeout)
-        if options.influx_drop_database:
-            client.drop_database(database)
-
-        client.create_database(database)
-        self.client = client
-
-    def send_points(self, tags, points=None):
-        options = self.options
-        logger = self.logger
-        if points is None:
-            points = self.points
-        if points:
-            if logger:
-                if options.quiet < 2:
-                    logger.info("Sending %d points" % len(points))
-                logger.debug(points[0])
-            if not self.client:
-                dump = json.dumps(points, indent=4, sort_keys=True)
-                raise BackendDryRun(dump)
-            return self.client.write_points(points, tags=tags, time_precision='m',
-                                            batch_size=options.influx_batch_size)
-        return True
-
-    def add_points(self, mbs, status):
-        self.points = []
-        for measurement, tagnames in list(MBS_TAGS.items()):
-            if measurement not in mbs:
-                continue
-            for tags, value in list(mbs[measurement].items()):
-                influxtags = dict(list(zip(tagnames, tags[1:])))
-                for k, v in list(influxtags.items()):
-                    if k == 'protocol':
-                        if v == 's':
-                            influxtags[k] = 'https'
-                        else:
-                            influxtags[k] = 'http'
-                    influxtags[k] = str(v)
-                fields = {'value': value}
-                self.points.append({
-                    "measurement": measurement,
-                    "tags": influxtags,
-                    "time": bucket2time(tags[0], status),
-                    "fields": fields
-                })
-
-
-def read_config(conf_path):
-    with open(conf_path, 'r') as f:
-        return json.load(f)
 
 
 def main():
@@ -780,9 +634,6 @@ def main():
         parser.print_usage()
         sys.exit(1)
 
-    if not has_influxdb:
-        options.dry_run = True
-
     workdir = os.path.abspath(options.workdir)
     safefile = SafeFile(workdir, filename)
     files = {
@@ -817,7 +668,6 @@ def main():
 
     parsed_lines = 0
     skipped_lines = 0
-    res = False
     try:
         backend = InfluxBackend(options, logger=logger)
 
@@ -891,7 +741,7 @@ def main():
                                 len(to_resend))
                     if options.simulate_send_failure:
                         raise Exception('Simulating send failure (resend)')
-                    if backend.send_points(tags, points=to_resend)
+                    if backend.send_points(tags, points=to_resend):
                         status['saved_points'].clear()
                 except BackendDryRun as e:
                     print("Dry run: %s" % e)
@@ -907,8 +757,7 @@ def main():
                 try:
                     if options.simulate_send_failure:
                         raise Exception('Simulating send failure')
-                    ret = backend.send_points(tags)
-                    if not ret:
+                    if not backend.send_points(tags):
                         raise Exception('influx_send failed')
                 except BackendDryRun as e:
                     print("Dry run: %s" % e)
