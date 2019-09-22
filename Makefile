@@ -5,9 +5,9 @@ initdev:
 	pip install -r requirements-dev.txt
 
 check: initdev
-	isort -c -rc mbstats/
-	pyflakes mbstats/
-	pylint mbstats/
+	-isort -c -rc -df mbstats/
+	-pyflakes mbstats/
+	-pylint mbstats/
 	
 test:
 	python -m unittest discover mbstats/tests/
