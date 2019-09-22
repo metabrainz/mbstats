@@ -1,17 +1,16 @@
-import unittest
-import tempfile
-import os.path
-
 import json
 from json.decoder import JSONDecodeError
+import os.path
+import tempfile
+import unittest
 
 from mbstats.utils import (
-    lineno,
-    save_obj,
-    load_obj,
-    read_config,
     bucket2time,
+    lineno,
+    load_obj,
     msec2bucket,
+    read_config,
+    save_obj,
 )
 
 
@@ -25,7 +24,7 @@ class TestUtils(unittest.TestCase):
         self.test_dir.cleanup()
 
     def test_lineno(self):
-        self.assertEqual(lineno(), 28)  # if this line moves, change the number
+        self.assertEqual(lineno(), 27)  # if this line moves, change the number
 
     def test_save_load_obj(self):
         obj = {'test': 666}

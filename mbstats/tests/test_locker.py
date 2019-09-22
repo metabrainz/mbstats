@@ -1,9 +1,12 @@
 import os.path
-import unittest
 import tempfile
+import unittest
 
-
-from mbstats.locker import Locker, LockingError, has_portalocker
+from mbstats.locker import (
+    Locker,
+    LockingError,
+    has_portalocker,
+)
 
 
 class TestLocker(unittest.TestCase):

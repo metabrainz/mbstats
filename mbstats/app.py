@@ -42,6 +42,14 @@
 # http://www.gnu.org/licenses/gpl.txt
 #
 import argparse
+from collections import (
+    defaultdict,
+    deque,
+)
+from enum import (
+    IntEnum,
+    unique,
+)
 import itertools
 import json
 import logging.config
@@ -50,22 +58,27 @@ import math
 import os.path
 import platform
 import sys
+from time import time
 import traceback
 
-from collections import (defaultdict, deque)
-from enum import IntEnum, unique
-from time import time
 from pygtail import Pygtail
-from mbstats.locker import Locker, LockingError
+
+from mbstats.backends import (
+    BackendDryRun,
+    InfluxBackend,
+)
+from mbstats.locker import (
+    Locker,
+    LockingError,
+)
 from mbstats.safefile import SafeFile
-from mbstats.backends import InfluxBackend, BackendDryRun
 from mbstats.utils import (
-    lineno,
-    save_obj,
-    load_obj,
-    read_config,
     bucket2time,
+    lineno,
+    load_obj,
     msec2bucket,
+    read_config,
+    save_obj,
 )
 
 

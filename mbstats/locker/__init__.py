@@ -42,8 +42,10 @@
 # http://www.gnu.org/licenses/gpl.txt
 #
 
+import fcntl
 import os.path
 import platform
+
 
 try:
     import portalocker
@@ -51,7 +53,6 @@ try:
 except ImportError:
     has_portalocker = False
 
-import fcntl
 
 class LockingError(Exception):
     """ Exception raised for errors creating or destroying lockfiles. """
@@ -124,4 +125,3 @@ class Locker:
 
         if self.logger is not None:
             self.logger.debug("Unlocking successful")
-

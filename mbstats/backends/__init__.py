@@ -45,6 +45,7 @@ import json
 
 from mbstats.utils import bucket2time
 
+
 try:
     from influxdb import InfluxDBClient
     has_influxdb = True

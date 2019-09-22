@@ -1,6 +1,5 @@
-import unittest
 import tempfile
-
+import unittest
 
 from mbstats.safefile import SafeFile
 
