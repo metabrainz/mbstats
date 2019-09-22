@@ -441,14 +441,7 @@ def mbspostprocess(mbs):
                 v) / mbs['hits_with_upstream'][k]
 
 
-def main():
-    script_start_time = time()
-
-    try:
-        options = parse_options()
-    except ParseOptionsSysExit as e:
-        sys.exit(e.exit_code)
-
+def init_logger(options):
     log_dir = options.log_dir
     if not log_dir:
         log_dir = options.workdir
@@ -484,7 +477,18 @@ def main():
     elif options.quiet == 1:
         logger.info("Starting")
 
+    return logger
 
+
+def main():
+    script_start_time = time()
+
+    try:
+        options = parse_options()
+    except ParseOptionsSysExit as e:
+        sys.exit(e.exit_code)
+
+    logger = init_logger(options)
     filename = options.file
     workdir = os.path.abspath(options.workdir)
     safefile = SafeFile(workdir, filename)
