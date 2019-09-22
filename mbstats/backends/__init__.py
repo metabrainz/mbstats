@@ -155,6 +155,6 @@ class InfluxBackend(Backend):
                 self.points.append({
                     "measurement": measurement,
                     "tags": influxtags,
-                    "time": bucket2time(tags[0], status),
+                    "time": bucket2time(tags[0], status['bucket_duration']),
                     "fields": fields
                 })

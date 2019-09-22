@@ -44,6 +44,7 @@
 import datetime
 import inspect
 import json
+import math
 import pickle
 
 
@@ -72,11 +73,15 @@ def load_obj(filepath, logger=None):
         return pickle.load(f)
 
 
-def bucket2time(bucket, status):
+def bucket2time(bucket, bucket_duration):
     d = datetime.datetime.utcfromtimestamp(
-        bucket * status['bucket_duration']
+        bucket * bucket_duration
     )
     return d.isoformat() + 'Z'
+
+
+def msec2bucket(msec, bucket_duration):
+   return int(math.ceil(msec / bucket_duration))
 
 
 def read_config(conf_path):

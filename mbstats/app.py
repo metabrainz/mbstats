@@ -59,7 +59,14 @@ from pygtail import Pygtail
 from mbstats.locker import Locker, LockingError
 from mbstats.safefile import SafeFile
 from mbstats.backends import InfluxBackend, BackendDryRun
-from mbstats.utils import lineno, save_obj, load_obj, read_config, bucket2time
+from mbstats.utils import (
+    lineno,
+    save_obj,
+    load_obj,
+    read_config,
+    bucket2time,
+    msec2bucket,
+)
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
@@ -200,7 +207,7 @@ def parsefile(tailer, status, options, logger=None):
         if logger and options.quiet < 2:
             for bucket in storage:
                 logger.info("Previous leftover bucket: %s %d" %
-                            (bucket2time(bucket, status), len(storage[bucket])))
+                            (bucket2time(bucket, status['bucket_duration']), len(storage[bucket])))
     else:
         storage = defaultdict(deque)
         if logger:
@@ -243,7 +250,7 @@ def parsefile(tailer, status, options, logger=None):
                         raise ParseSkip
                     if msec > last_msec:
                         last_msec = msec
-                    bucket = int(math.ceil(msec / bucket_duration))
+                    bucket = msec2bucket(msec, bucket_duration)
 
                     row = {
                         'vhost': items[PosField.vhost],
@@ -276,7 +283,8 @@ def parsefile(tailer, status, options, logger=None):
                     if storage[ready_to_process]:
                         if logger and options.quiet < 2:
                             logger.info("Processing bucket: %s %d" %
-                                        (bucket2time(ready_to_process, status),
+                                        (bucket2time(ready_to_process,
+                                                     status['bucket_duration']),
                                          len(storage[ready_to_process])))
                         process_bucket(ready_to_process, storage, status, mbs)
                 except ParseSkip:
@@ -305,7 +313,7 @@ def parsefile(tailer, status, options, logger=None):
         if options.quiet < 2:
             for bucket in leftover:
                 logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket,
-                                                                       status),
+                                                                       status['bucket_duration']),
                                                            len(leftover[bucket])))
 
     mbspostprocess(mbs)
