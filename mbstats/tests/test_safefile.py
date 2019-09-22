@@ -4,7 +4,7 @@ import unittest
 import tempfile
 
 
-from mbstats.app import SafeFile
+from mbstats.safefile import SafeFile
 
 
 class TestSafeFile(unittest.TestCase):

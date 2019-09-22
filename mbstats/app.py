@@ -68,6 +68,7 @@ except ImportError:
 from time import time
 from pygtail import Pygtail
 from mbstats.locker import Locker, LockingError
+from mbstats.safefile import SafeFile
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
@@ -549,79 +550,6 @@ class InfluxBackend:
                     "time": bucket2time(tags[0], status),
                     "fields": fields
                 })
-
-
-class SafeFile(object):
-    def __init__(self, workdir, identifier, suffix='', logger=None):
-        self.identifier = identifier
-        self.suffix = suffix
-        self.sane_filename = re.sub(r'\W', '_', self.identifier + self.suffix)
-        self.workdir = workdir
-        self.main = os.path.join(self.workdir, self.sane_filename)
-        self.tmp = "%s.%s.tmp" % (self.main, uuid1().hex)
-        self.old = "%s.old" % (self.main)
-        self.lock = "%s.lock" % (self.main)
-        self.logger = logger
-
-    def suffixed(self, suffix):
-        return SafeFile(self.workdir, self.identifier, suffix='.' + suffix)
-
-    def main2old(self):
-        try:
-            if os.path.isfile(self.old):
-                os.unlink(self.old)
-            shutil.copy2(self.main, self.old)
-            if self.logger:
-                self.logger.debug("main2old(): Copied %r to %r" % (self.main, self.old))
-        except Exception as e:
-            if self.logger:
-                self.logger.warning("main2old() failed: %r -> %r %s" % (self.main, self.old, e))
-            pass
-
-    def tmp2main(self):
-        try:
-            self.main2old()
-            os.rename(self.tmp, self.main)
-            if self.logger:
-                self.logger.debug("tmp2main(): Renamed %r to %r" % (self.tmp, self.main))
-        except Exception as e:
-            if self.logger:
-                self.logger.error("tmp2main(): failed: %r -> %r %s" % (self.tmp, self.main, e))
-            raise
-
-    def tmpclean(self):
-        if os.path.isfile(self.tmp):
-            try:
-                os.remove(self.tmp)
-                if self.logger:
-                    self.logger.debug("tmpclean(): Removed %r" % self.tmp)
-            except Exception as e:
-                if self.logger:
-                    self.logger.error("tmpclean(): failed: %r %s" % (self.tmp, e))
-                pass
-
-    def main2tmp(self):
-        if os.path.isfile(self.main):
-            try:
-                shutil.copy2(self.main, self.tmp)
-                if self.logger:
-                    self.logger.debug("main2tmp(): Copied %r to %r" % (self.main, self.tmp))
-            except Exception as e:
-                if self.logger:
-                    self.logger.error("main2tmp(): failed: %r -> %r %s" % (self.main, self.tmp, e))
-                raise
-
-    def remove_main(self):
-        self.main2old()
-        self.tmpclean()
-        try:
-            os.remove(self.main)
-            if self.logger:
-                self.logger.debug("remove_main(): Removed %r" % (self.main))
-        except Exception as e:
-            if self.logger:
-                self.logger.error("remove_main(): failed: %r %s" % (self.main, e))
-            pass
 
 
 def read_config(conf_path):
