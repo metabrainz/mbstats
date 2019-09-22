@@ -510,13 +510,13 @@ def main():
         sys.exit(1)
 
     def cleanup():
-        files['offset'].tmpclean()
-        files['status'].tmpclean()
+        files['offset'].remove_tmp()
+        files['status'].remove_tmp()
         lock.unlock()
 
     def finalize():
-        files['offset'].tmp2main()
-        files['status'].tmp2main()
+        files['offset'].rename_tmp_to_main()
+        files['status'].rename_tmp_to_main()
 
     if options.startover:
         files['offset'].remove_main()
@@ -527,7 +527,7 @@ def main():
     try:
         backend = InfluxBackend(options, logger=logger)
 
-        files['offset'].main2tmp()
+        files['offset'].copy_main_to_tmp()
 
         pygtail = Pygtail(filename, offset_file=files['offset'].tmp)
 

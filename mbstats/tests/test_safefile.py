@@ -37,7 +37,7 @@ class TestSafeFile(unittest.TestCase):
             read_payload = read_data(attr)
             self.assertEqual(payloads[attr], read_payload, attr)
 
-        self.safefile.tmp2main()
+        self.safefile.rename_tmp_to_main()
         expect = {
             'old': b'main',
             'tmp': b'',
@@ -48,7 +48,7 @@ class TestSafeFile(unittest.TestCase):
             read_payload = read_data(attr)
             self.assertEqual(expect[attr], read_payload, attr)
 
-        self.safefile.main2tmp()
+        self.safefile.copy_main_to_tmp()
         expect = {
             'old': b'main',
             'tmp': b'tmp',
@@ -59,7 +59,7 @@ class TestSafeFile(unittest.TestCase):
             read_payload = read_data(attr)
             self.assertEqual(expect[attr], read_payload, attr)
 
-        self.safefile.tmpclean()
+        self.safefile.remove_tmp()
         expect = {
             'old': b'main',
             'tmp': b'',
