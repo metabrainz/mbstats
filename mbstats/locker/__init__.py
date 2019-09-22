@@ -55,7 +55,6 @@ import fcntl
 
 class LockingError(Exception):
     """ Exception raised for errors creating or destroying lockfiles. """
-    pass
 
 
 class Locker:

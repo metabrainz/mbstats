@@ -72,7 +72,6 @@ class SafeFile(object):
         except Exception as e:
             if self.logger:
                 self.logger.warning("main2old() failed: %r -> %r %s" % (self.main, self.old, e))
-            pass
 
     def tmp2main(self):
         try:
@@ -94,7 +93,6 @@ class SafeFile(object):
             except Exception as e:
                 if self.logger:
                     self.logger.error("tmpclean(): failed: %r %s" % (self.tmp, e))
-                pass
 
     def main2tmp(self):
         if os.path.isfile(self.main):
@@ -117,4 +115,3 @@ class SafeFile(object):
         except Exception as e:
             if self.logger:
                 self.logger.error("remove_main(): failed: %r %s" % (self.main, e))
-            pass

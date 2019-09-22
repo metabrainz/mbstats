@@ -154,21 +154,18 @@ def parse_upstreams(row):
         except ValueError:
             if item[2] not in ('-', ''):
                 raise
-            pass
 
         try:
             r['connect_time'][k] += float(item[3])
         except ValueError:
             if item[3] not in ('-', ''):
                 raise
-            pass
 
         try:
             r['header_time'][k] += float(item[4])
         except ValueError:
             if item[4] not in ('-', ''):
                 raise
-            pass
 
     return r
 
@@ -289,7 +286,6 @@ def parsefile(tailer, status, options, logger=None):
                         process_bucket(ready_to_process, storage, status, mbs)
                 except ParseSkip:
                     skipped_lines += 1
-                    pass
                 except Exception as e:
                     if logger:
                         logger.error("%s: %s" % (line, e))
@@ -753,13 +749,11 @@ def main():
                         status['saved_points'].clear()
                 except BackendDryRun as e:
                     print("Dry run: %s" % e)
-                    pass
                 except Exception as e:
                     msg = "Influx send failed again: %s: %s" % (lineno(), e)
                     print(msg)
                     traceback.print_exc()
                     logger.error(msg)
-                    pass
 
             if backend.points:
                 try:
@@ -769,7 +763,6 @@ def main():
                         raise Exception('influx_send failed')
                 except BackendDryRun as e:
                     print("Dry run: %s" % e)
-                    pass
                 except Exception as e:
                     msg = "Influx send: Exception caught at %s: %s" % (lineno(), e)
                     print(msg)
@@ -779,7 +772,6 @@ def main():
                     logger.info("Failed to send, saving points for later %d/%d" %
                                 (len(status['saved_points']),
                                  options.send_failure_fifo_size))
-                    pass
 
         save_obj(status, files['status'].tmp, logger=logger)
     except KeyboardInterrupt:
