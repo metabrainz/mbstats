@@ -9,6 +9,7 @@ import unittest
 from mbstats.app import (
     main,
     parse_upstreams,
+    parseline,
 )
 
 
@@ -17,6 +18,7 @@ LINES_TO_PARSE = 10
 
 class TestParser(unittest.TestCase):
     def setUp(self):
+        self.maxDiff = None
         # Create a temporary directory
         self.test_dir = tempfile.TemporaryDirectory()
         self.logfile = os.path.join(self.test_dir.name, 'nginx.log')
@@ -163,27 +165,80 @@ class TestParser(unittest.TestCase):
             }
             result = parse_upstreams(upstreams)
 
-#test change of bucket duration, must fail (hence the !)
-#! $CMD -m 1000 --bucket-duration 30 && echo "Testing exit on change of bucket duration, SUCCESS"
-#test change of lookback factor, must fail (hence the !)
-#! $CMD -m 1000 --lookback-factor 3 && echo "Testing exit on change of lookback factor, SUCCESS"
 
-#$CMD -m 300000;
+    def test_parseline(self):
+        line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
+        row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
-#for i in $(seq 1 5); do
-#	$CMD -m 70000 --simulate-send-failure;
-#done
+        expected = {
+            'vhost': 'musicbrainz.org',
+            'protocol': 's',
+            'loctag': 'ws',
+            'status': 200,
+            'bytes_sent': 2799,
+            'request_length': 289,
+            'gzip_ratio': 2.5,
+            'request_time': 0.026,
+            'upstreams': {
+                'servers_contacted': 1,
+                'internal_redirects': 0,
+                'status': {
+                    '10.2.2.31:65412': {
+                        '200': 1
+                    }
+                },
+                'response_time': {
+                    '10.2.2.31:65412': 0.024
+                },
+                'connect_time': {
+                    '10.2.2.31:65412': 0.0
+                },
+                'header_time': {
+                    '10.2.2.31:65412': 0.024
+                },
+                'servers': ['10.2.2.31:65412']
+            }
+        }
+        self.assertEqual(row, expected)
+        self.assertEqual(last_msec, 1568962563.374)
+        self.assertEqual(bucket, 1568962564)
 
-#for i in $(seq 1 5); do
-#	$CMD -m 70000;
-#done
+        with self.assertRaises(ValueError):
+            line = '1|x1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
-#$CMD -m 2000000;
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|x200|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
-# simulate a log rotation
-#mv $STATSLOG $STATSLOG.1
-#head -5500000 $STATSLOG_SOURCE | tail -500000 > $STATSLOG
-#$CMD -m 200000;
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200|x2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|x2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|x289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|x0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200|x0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|x0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|x0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+
 
 if __name__ == '__main__':
     unittest.main()

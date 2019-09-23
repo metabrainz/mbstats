@@ -195,6 +195,46 @@ class ParseSkip(Exception):
     pass
 
 
+def parseline(line, last_msec=0, ignore_before=0, bucket_duration=60):
+    items = line.split('|')
+    msec = float(items[PosField.msec])
+    if msec <= ignore_before:
+        # skip unordered & old entries
+        raise ParseSkip
+    if msec > last_msec:
+        last_msec = msec
+    bucket = msec2bucket(msec, bucket_duration)
+
+    row = {
+        'vhost': items[PosField.vhost],
+        'protocol': items[PosField.protocol],
+        'loctag': items[PosField.loctag],
+        'status': int(items[PosField.status]),
+        'bytes_sent': int(items[PosField.bytes_sent]),
+        'request_length': int(items[PosField.request_length]),
+    }
+
+    if items[PosField.gzip_ratio] != '-':
+        row['gzip_ratio'] = float(items[PosField.gzip_ratio])
+    if items[PosField.request_time] != '-':
+        row['request_time'] = float(items[PosField.request_time])
+
+    if items[PosField.upstream_addr] != '-':
+        # Note : last element contains trailing new line character
+        # from readline()
+        upstreams = {
+            'upstream_addr': items[PosField.upstream_addr],
+            'upstream_status': items[PosField.upstream_status],
+            'upstream_response_time': items[PosField.upstream_response_time],
+            'upstream_connect_time': items[PosField.upstream_connect_time],
+            'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
+        }
+
+        row['upstreams'] = parse_upstreams(upstreams)
+
+    return row, last_msec, bucket
+
+
 def parsefile(tailer, status, options, logger=None):
     parsed_lines = 0
     skipped_lines = 0
@@ -257,42 +297,10 @@ def parsefile(tailer, status, options, logger=None):
             for line in tailer:
                 parsed_lines += 1
                 try:
-                    items = line.split('|')
-                    msec = float(items[PosField.msec])
-                    if msec <= ignore_before:
-                        # skip unordered & old entries
-                        raise ParseSkip
-                    if msec > last_msec:
-                        last_msec = msec
-                    bucket = msec2bucket(msec, bucket_duration)
-
-                    row = {
-                        'vhost': items[PosField.vhost],
-                        'protocol': items[PosField.protocol],
-                        'loctag': items[PosField.loctag],
-                        'status': int(items[PosField.status]),
-                        'bytes_sent': int(items[PosField.bytes_sent]),
-                        'request_length': int(items[PosField.request_length]),
-                    }
-
-                    if items[PosField.gzip_ratio] != '-':
-                        row['gzip_ratio'] = float(items[PosField.gzip_ratio])
-                    if items[PosField.request_time] != '-':
-                        row['request_time'] = float(items[PosField.request_time])
-
-                    if items[PosField.upstream_addr] != '-':
-                        # Note : last element contains trailing new line character
-                        # from readline()
-                        upstreams = {
-                            'upstream_addr': items[PosField.upstream_addr],
-                            'upstream_status': items[PosField.upstream_status],
-                            'upstream_response_time': items[PosField.upstream_response_time],
-                            'upstream_connect_time': items[PosField.upstream_connect_time],
-                            'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
-                        }
-
-                        row['upstreams'] = parse_upstreams(upstreams)
-
+                    row, last_msec, bucket = parseline(line,
+                                               ignore_before=ignore_before,
+                                               bucket_duration=bucket_duration,
+                                               last_msec=last_msec)
                     storage[bucket].append(row)
                     ready_to_process = bucket - lookback_factor
 
