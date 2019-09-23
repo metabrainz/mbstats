@@ -100,6 +100,11 @@ class Locker:
     def unlock(self):
         """ Release a lock via a provided file descriptor. """
 
+        if self.lockfile_fd is None:
+            if self.logger is not None:
+                self.logger.debug("Nothing to unlock")
+            return
+
         if has_portalocker and self.lock_type == 'portalocker':
             try:
                 # uses fcntl.LOCK_UN on posix (in contrast with the flock()ing below)
@@ -120,6 +125,7 @@ class Locker:
         try:
             self.lockfile_fd.close()
             os.unlink(self.lockfile_path)
+            self.lockfile_fd = None
         except OSError as e:
             raise LockingError("Cannot unlink %s: %s" % (self.lockfile_path, e))
 

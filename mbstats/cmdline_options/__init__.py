@@ -129,7 +129,7 @@ def parse_options():
         'send_failure_fifo_size': 30,
         'simulate_send_failure': False,
         'startover': False,
-        'syslog': False,
+        'log_handler': 'file',
     }
     conf_parser = argparse.ArgumentParser(add_help=False)
     conf_parser.add_argument("-c", "--config", help="Specify json config file(s)",
@@ -211,8 +211,8 @@ def parse_options():
                         help='Logging configuration file. None by default')
     expert.add_argument('--dump-config', action='store_true',
                         help="dump config as json to stdout")
-    expert.add_argument('--syslog', action='store_true',
-                        help="Log to syslog")
+    expert.add_argument('--log-handler', action='store',
+                        help="Log to (syslog, file, stdout)")
     expert.add_argument('--send-failure-fifo-size', type=int,
                         help="Number of failed sends to backup")
     expert.add_argument('--simulate-send-failure', action='store_true',

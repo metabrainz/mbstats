@@ -442,17 +442,23 @@ def mbspostprocess(mbs):
 
 
 def init_logger(options):
-    log_dir = options.log_dir
-    if not log_dir:
-        log_dir = options.workdir
 
     logger = logging.getLogger('stats.parser')
-    if options.syslog:
+    logger.handlers = []
+    if options.log_handler == 'syslog':
         hdlr = logging.handlers.SysLogHandler(
             address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_SYSLOG)
         formatter = logging.Formatter('%(name)s: %(message)s')
         hdlr.setFormatter(formatter)
+    elif options.log_handler == 'stdout':
+        hdlr = logging.StreamHandler(sys.__stdout__)
+        formatter = logging.Formatter(
+            '%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
+        hdlr.setFormatter(formatter)
     else:
+        log_dir = options.log_dir
+        if not log_dir:
+            log_dir = options.workdir
         # Logging infrastructure for use throughout the script.
         # Uses appending log file, rotated at 100 MB, keeping 5.
         if (not os.path.isdir(log_dir)):
@@ -482,7 +488,7 @@ def init_logger(options):
 
 def main():
     script_start_time = time()
-
+    print(sys.argv)
     try:
         options = parse_options()
     except ParseOptionsSysExit as e:

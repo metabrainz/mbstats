@@ -130,7 +130,7 @@ class InfluxBackend(Backend):
             if logger:
                 if options.quiet < 2:
                     logger.info("Sending %d points" % len(points))
-                logger.debug(points[0])
+                logger.debug(points[:100])
             if not self.client:
                 dump = json.dumps(points, indent=4, sort_keys=True)
                 raise BackendDryRun(dump)
