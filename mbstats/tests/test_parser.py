@@ -8,6 +8,8 @@ import unittest
 
 from mbstats.app import main
 
+LINES_TO_PARSE = 100000
+
 
 class TestParser(unittest.TestCase):
     def setUp(self):
@@ -17,14 +19,13 @@ class TestParser(unittest.TestCase):
         this_dir =  os.path.dirname(os.path.abspath(__file__))
         self.logfile_gz = os.path.join(this_dir, 'data', 'stats.log.gz')
 
-        max_count = 70000
         count = 0
         with open(self.logfile, 'w') as out:
             with io.TextIOWrapper(io.BufferedReader(gzip.open(self.logfile_gz))) as f:
                 for line in f:
                     out.write(line)
                     count += 1
-                    if count >= max_count:
+                    if count >= LINES_TO_PARSE:
                         break
 
         self.log_numlines = count
@@ -49,7 +50,6 @@ class TestParser(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     main()
                 output = buf.getvalue()
-        #print(output)
         return output
 
     def test_B(self):
@@ -69,25 +69,40 @@ class TestParser(unittest.TestCase):
             '--log-handler=stdout',
         ]
 
-        output += self.call_main(common_args + ['-m', '1000', '--startover'])
+        remain = self.log_numlines
+        num = 1000
+        output = self.call_main(common_args + ['-m', str(num), '--startover'])
+        self.assertIn(' parsed=%d ' % num, output)
+        remain -= num
 
-        output += self.call_main(common_args + [
+        num = 1000
+        output = self.call_main(common_args + [
             '-m',
-            '1000',
+            str(num),
             '--bucket-duration',
             '30',
         ])
+        self.assertIn(' Error: Bucket duration mismatch 60 vs 30', output)
+        #Lines weren't parsed, so keep remain's value
 
-        output += self.call_main(common_args + [
+        num = int(self.log_numlines / 2)
+        output = self.call_main(common_args + [
             '-m',
-            str(int(self.log_numlines / 2)),
+            str(num),
         ])
-        output += self.call_main(common_args + [
+        self.assertIn(' parsed=%d ' % num, output)
+        remain -= num
+
+        num = remain
+        output = self.call_main(common_args + [
             '-m',
-            str(int(self.log_numlines / 2)),
+            str(num),
         ])
-        #print(output)
-        self.assertIn('--dry-run', output)
+        self.assertIn(' parsed=%d ' % num, output)
+        remain -= num
+
+        # All lines should have been parsed
+        self.assertEqual(remain, 0)
 
 
 #test change of bucket duration, must fail (hence the !)

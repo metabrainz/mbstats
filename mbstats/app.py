@@ -453,7 +453,7 @@ def init_logger(options):
         formatter = logging.Formatter('%(name)s: %(message)s')
         hdlr.setFormatter(formatter)
     elif options.log_handler == 'stdout':
-        hdlr = logging.StreamHandler(sys.__stdout__)
+        hdlr = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter(
             '%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
         hdlr.setFormatter(formatter)
