@@ -55,8 +55,8 @@ class TestParser(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 with self.assertRaises(SystemExit) as se:
                     main()
-                self.assertEqual(se.exception.code, expected_code)
                 output = buf.getvalue()
+                self.assertEqual(se.exception.code, expected_code, output)
         return output
 
     def test_B(self):
@@ -69,7 +69,7 @@ class TestParser(unittest.TestCase):
             '-l',
             '.',
             '-n',
-            'test'
+            'test',
             '--dry-run',
             '--locker=portalocker',
             '--debug',
