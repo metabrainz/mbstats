@@ -1,4 +1,5 @@
 import contextlib
+import gzip
 import io
 import os.path
 import sys
@@ -15,13 +16,19 @@ class TestParser(unittest.TestCase):
         self.logfile = os.path.join(self.test_dir.name, 'nginx.log')
         this_dir =  os.path.dirname(os.path.abspath(__file__))
         self.logfile_gz = os.path.join(this_dir, 'data', 'stats.log.gz')
-        import gzip
 
+        max_count = 70000
+        count = 0
         with open(self.logfile, 'w') as out:
-            with gzip.open(self.logfile_gz, 'rt') as f:
-                out.writelines(f.readlines(10000000))
-        with open(self.logfile, 'r') as f:
-            print(f.readlines(10))
+            with io.TextIOWrapper(io.BufferedReader(gzip.open(self.logfile_gz))) as f:
+                for line in f:
+                    out.write(line)
+                    count += 1
+                    if count >= max_count:
+                        break
+
+        self.log_numlines = count
+        #print("Log has %d lines" % self.log_numlines)
 
     def tearDown(self):
         # Close the file, the directory will be removed after the test
@@ -73,11 +80,11 @@ class TestParser(unittest.TestCase):
 
         output += self.call_main(common_args + [
             '-m',
-            '3000000',
+            str(int(self.log_numlines / 2)),
         ])
         output += self.call_main(common_args + [
             '-m',
-            '3000000',
+            str(int(self.log_numlines / 2)),
         ])
         #print(output)
         self.assertIn('--dry-run', output)
