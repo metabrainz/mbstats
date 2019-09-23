@@ -6,7 +6,10 @@ import sys
 import tempfile
 import unittest
 
-from mbstats.app import main
+from mbstats.app import (
+    main,
+    parse_upstreams,
+)
 
 
 LINES_TO_PARSE = 10
@@ -108,6 +111,57 @@ class TestParser(unittest.TestCase):
         # All lines should have been parsed
         self.assertEqual(remain, 0)
 
+    def test_parse_upstreams(self):
+
+        upstreams = {
+            'upstream_addr': '10.2.2.31:65412, 10.2.2.32:65412',
+            'upstream_status': '200, 200',
+            'upstream_response_time': '0.024, 0.024',
+            'upstream_connect_time': '0.000, 0.000',
+            'upstream_header_time': '0.024, 0.024'
+        }
+
+        result = parse_upstreams(upstreams)
+        self.assertEqual(result['servers_contacted'], 2)
+        self.assertEqual(result['internal_redirects'], 0)
+        servers = ['10.2.2.31:65412', '10.2.2.32:65412']
+        self.assertEqual(result['servers'], servers)
+        for server in servers:
+            self.assertEqual(result['status'][server]['200'], 1)
+            self.assertEqual(result['response_time'][server], 0.024)
+            self.assertEqual(result['connect_time'][server], 0.0)
+            self.assertEqual(result['header_time'][server], 0.024)
+
+        with self.assertRaises(ValueError):
+            upstreams = {
+                'upstream_addr': '10.2.2.31:65412',
+                'upstream_status': '200',
+                'upstream_response_time': 'x0.024',
+                'upstream_connect_time': '0.000',
+                'upstream_header_time': '0.024'
+            }
+            result = parse_upstreams(upstreams)
+
+        with self.assertRaises(ValueError):
+            upstreams = {
+                'upstream_addr': '10.2.2.31:65412',
+                'upstream_status': '200',
+                'upstream_response_time': '0.024',
+                'upstream_connect_time': 'x0.000',
+                'upstream_header_time': '0.024'
+            }
+            result = parse_upstreams(upstreams)
+
+
+        with self.assertRaises(ValueError):
+            upstreams = {
+                'upstream_addr': '10.2.2.31:65412',
+                'upstream_status': '200',
+                'upstream_response_time': '0.024',
+                'upstream_connect_time': '0.000',
+                'upstream_header_time': 'x0.024'
+            }
+            result = parse_upstreams(upstreams)
 
 #test change of bucket duration, must fail (hence the !)
 #! $CMD -m 1000 --bucket-duration 30 && echo "Testing exit on change of bucket duration, SUCCESS"

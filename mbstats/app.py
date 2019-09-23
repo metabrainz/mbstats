@@ -283,13 +283,15 @@ def parsefile(tailer, status, options, logger=None):
                     if items[PosField.upstream_addr] != '-':
                         # Note : last element contains trailing new line character
                         # from readline()
-                        row['upstreams'] = parse_upstreams({
+                        upstreams = {
                             'upstream_addr': items[PosField.upstream_addr],
                             'upstream_status': items[PosField.upstream_status],
                             'upstream_response_time': items[PosField.upstream_response_time],
                             'upstream_connect_time': items[PosField.upstream_connect_time],
                             'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
-                        })
+                        }
+
+                        row['upstreams'] = parse_upstreams(upstreams)
 
                     storage[bucket].append(row)
                     ready_to_process = bucket - lookback_factor
