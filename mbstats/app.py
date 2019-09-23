@@ -41,6 +41,8 @@
 # For a full description of the license, please visit
 # http://www.gnu.org/licenses/gpl.txt
 #
+
+
 from collections import (
     defaultdict,
     deque,
@@ -515,15 +517,6 @@ def main():
         logger.warning(msg)
         sys.exit(1)
 
-    def cleanup():
-        files['offset'].remove_tmp()
-        files['status'].remove_tmp()
-        lock.unlock()
-
-    def finalize():
-        files['offset'].rename_tmp_to_main()
-        files['status'].rename_tmp_to_main()
-
     if options.startover:
         files['offset'].remove_main()
         files['status'].remove_main()
@@ -543,6 +536,7 @@ def main():
             logger.warning("Failed to load status from %s: %s" %
                            (files['status'].main, e))
             status = {}
+        logger.debug("main status: %r" % len(status))
 
         save = False
         if 'last_msec' not in status:
@@ -647,10 +641,16 @@ def main():
         logger.error(msg)
         retcode = 1
     else:
-        finalize()
+        files['offset'].rename_tmp_to_main()
+        files['status'].rename_tmp_to_main()
         retcode = 0
     finally:
-        cleanup()
+        files['offset'].remove_tmp()
+        files['status'].remove_tmp()
+        try:
+            lock.unlock()
+        except LockingError:
+            pass
 
     if options.quiet < 2:
         # Log the execution time
@@ -661,11 +661,6 @@ def main():
             mean_per_line = 0.0
         logger.info("duration=%ss parsed=%d skipped=%d mean_per_line=%0.3fµs" %
                     (exec_time, parsed_lines, skipped_lines, mean_per_line))
-
-    try:
-        lock.unlock()
-    except LockingError:
-        pass
 
     sys.exit(retcode)
 
