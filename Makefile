@@ -12,4 +12,7 @@ check: initdev
 test:
 	python -m unittest discover mbstats/tests/
 
+coverage:
+	coverage run -m unittest discover mbstats/tests/
+
 .PHONY: init test
