@@ -8,6 +8,7 @@ import unittest
 
 from mbstats.app import main
 
+
 LINES_TO_PARSE = 100000
 
 
@@ -41,14 +42,15 @@ class TestParser(unittest.TestCase):
                                  '--log-handler=stdout'])
         self.assertIn('"dry_run": true', output)
 
-    def call_main(self, args):
+    def call_main(self, args, expected_code=0):
         sys.argv = args
 
         output = None
         with io.StringIO() as buf:
             with contextlib.redirect_stdout(buf):
-                with self.assertRaises(SystemExit):
+                with self.assertRaises(SystemExit) as se:
                     main()
+                self.assertEqual(se.exception.code, expected_code)
                 output = buf.getvalue()
         return output
 
@@ -81,7 +83,7 @@ class TestParser(unittest.TestCase):
             str(num),
             '--bucket-duration',
             '30',
-        ])
+        ], expected_code=1)
         self.assertIn(' Error: Bucket duration mismatch 60 vs 30', output)
         #Lines weren't parsed, so keep remain's value
 

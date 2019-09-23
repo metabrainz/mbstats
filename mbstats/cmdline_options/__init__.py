@@ -53,7 +53,7 @@ class ParseOptionsSysExit(Exception):
 
     def __init__(self, exit_code, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.exit_code = exit_code
+        self.code = exit_code
 
 
 def parse_options():

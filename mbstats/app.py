@@ -488,74 +488,73 @@ def init_logger(options):
     return logger
 
 
+def init_status(files, options, logger):
+    status = {}
+    try:
+        status = load_obj(files['status'].main, logger=logger)
+    except IOError as e:
+        logger.warning("Failed to load status from %s: %s" %
+                       (files['status'].main, e))
+
+    logger.debug("main status: %r" % len(status))
+
+    default_status = {
+        'last_msec': lambda : 0,
+        'leftover': lambda : None,
+        'bucket_duration': lambda : options.bucket_duration,
+        'lookback_factor': lambda : options.lookback_factor,
+        'saved_points': lambda : deque([], options.send_failure_fifo_size),
+    }
+    save = False
+    for k in default_status:
+        if k not in status:
+            status[k] = default_status[k]()
+            save = True
+    if save:
+        save_obj(status, files['status'].tmp, logger=logger)
+    return status
+
+
 def main():
     script_start_time = time()
-    print(sys.argv)
     try:
         options = parse_options()
     except ParseOptionsSysExit as e:
-        sys.exit(e.exit_code)
+        sys.exit(e.code)
 
     logger = init_logger(options)
-    filename = options.file
-    workdir = os.path.abspath(options.workdir)
-    safefile = SafeFile(workdir, filename)
-    files = {
-        'offset': safefile.suffixed('offset'),
-        'status': safefile.suffixed('status'),
-        'lock': safefile.suffixed('lock')
-    }
-
-    # Check for lock file so we don't run multiple copies of the same parser
-    # simultaneuosly. This will happen if the log parsing takes more time than
-    # the cron period.
-    try:
-        lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
-    except LockingError as e:
-        msg = "Locking error: %s" % e
-        print(msg)
-        logger.warning(msg)
-        sys.exit(1)
-
-    if options.startover:
-        files['offset'].remove_main()
-        files['status'].remove_main()
 
     parsed_lines = 0
     skipped_lines = 0
     try:
+        safefile = SafeFile(os.path.abspath(options.workdir), options.file)
+        files = {
+            'offset': safefile.suffixed('offset'),
+            'status': safefile.suffixed('status'),
+            'lock': safefile.suffixed('lock')
+        }
+
+        # Check for lock file so we don't run multiple copies of the same parser
+        # simultaneuosly. This will happen if the log parsing takes more time than
+        # the cron period.
+        try:
+            lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
+        except LockingError as e:
+            msg = "Locking error: %s" % e
+            logger.warning(msg)
+            sys.exit(1)
+
         backend = InfluxBackend(options, logger=logger)
+
+        if options.startover:
+            files['offset'].remove_main()
+            files['status'].remove_main()
 
         files['offset'].copy_main_to_tmp()
 
-        pygtail = Pygtail(filename, offset_file=files['offset'].tmp)
+        pygtail = Pygtail(options.file, offset_file=files['offset'].tmp)
 
-        try:
-            status = load_obj(files['status'].main, logger=logger)
-        except IOError as e:
-            logger.warning("Failed to load status from %s: %s" %
-                           (files['status'].main, e))
-            status = {}
-        logger.debug("main status: %r" % len(status))
-
-        save = False
-        if 'last_msec' not in status:
-            status['last_msec'] = 0
-            save = True
-        if 'leftover' not in status:
-            status['leftover'] = None
-            save = True
-        if 'bucket_duration' not in status:
-            status['bucket_duration'] = options.bucket_duration
-            save = True
-        if 'lookback_factor' not in status:
-            status['lookback_factor'] = options.lookback_factor
-            save = True
-        if 'saved_points' not in status:
-            status['saved_points'] = deque([], options.send_failure_fifo_size)
-            save = True
-        if save:
-            save_obj(status, files['status'].tmp, logger=logger)
+        status = init_status(files, options, logger)
 
         if status['leftover'] is not None and len(status['leftover']) > 0:
             exit = False
@@ -572,7 +571,6 @@ def main():
                 msg += (" If you know what you are doing, remove status file %s" %
                         files['status'].main)
                 logger.error(msg)
-                print(msg)
                 sys.exit(1)
 
         mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger)
@@ -583,7 +581,7 @@ def main():
         if backend.points or status['saved_points']:
             tags = {
                 'host': options.hostname,
-                'name': options.name or filename,
+                'name': options.name or options.file,
             }
             if options.datacenter:
                 tags['dc'] = options.datacenter
@@ -600,10 +598,9 @@ def main():
                     if backend.send_points(tags, points=to_resend):
                         status['saved_points'].clear()
                 except BackendDryRun as e:
-                    print("Dry run: %s" % e)
+                    logger.debug("Dry run: %s" % e)
                 except Exception as e:
                     msg = "Influx send failed again: %s: %s" % (lineno(), e)
-                    print(msg)
                     traceback.print_exc()
                     logger.error(msg)
 
@@ -614,10 +611,9 @@ def main():
                     if not backend.send_points(tags):
                         raise Exception('influx_send failed')
                 except BackendDryRun as e:
-                    print("Dry run: %s" % e)
+                    logger.debug("Dry run: %s" % e)
                 except Exception as e:
                     msg = "Influx send: Exception caught at %s: %s" % (lineno(), e)
-                    print(msg)
                     traceback.print_exc()
                     logger.error(msg)
                     status['saved_points'].append(backend.points)
@@ -629,14 +625,12 @@ def main():
     except KeyboardInterrupt:
         if options.quiet < 2:
             msg = "Exiting on keyboard interrupt"
-            print(msg)
             logger.info(msg)
         retcode = 1
     except SystemExit as e:
-        raise e
+        retcode = e.code
     except Exception as e:
         msg = "Exception caught at %s: %s" % (lineno(), e)
-        print(msg)
         traceback.print_exc()
         logger.error(msg)
         retcode = 1
