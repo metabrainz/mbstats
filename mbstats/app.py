@@ -109,9 +109,11 @@ def factory():
 
 
 types = defaultdict(factory)
+# pylint: disable=W0108
 types['upstream_status'] = lambda x: int(x)
 types['upstream_response_time'] = types['upstream_connect_time'] = types['upstream_header_time'] = lambda x: float(
     x)
+# pylint: enable=W0108
 
 
 # @profile
