@@ -9,7 +9,7 @@ import unittest
 from mbstats.app import main
 
 
-LINES_TO_PARSE = 100000
+LINES_TO_PARSE = 10
 
 
 class TestParser(unittest.TestCase):
@@ -18,7 +18,7 @@ class TestParser(unittest.TestCase):
         self.test_dir = tempfile.TemporaryDirectory()
         self.logfile = os.path.join(self.test_dir.name, 'nginx.log')
         this_dir =  os.path.dirname(os.path.abspath(__file__))
-        self.logfile_gz = os.path.join(this_dir, 'data', 'stats.log.gz')
+        self.logfile_gz = os.path.join(this_dir, 'data', 'test1.log.gz')
 
         count = 0
         with open(self.logfile, 'w') as out:
@@ -69,22 +69,24 @@ class TestParser(unittest.TestCase):
             '--locker=portalocker',
             '--debug',
             '--log-handler=stdout',
+            '--bucket-duration',
+            '1',
         ]
 
         remain = self.log_numlines
-        num = 1000
+        num = 1
         output = self.call_main(common_args + ['-m', str(num), '--startover'])
         self.assertIn(' parsed=%d ' % num, output)
         remain -= num
 
-        num = 1000
+        num = 1
         output = self.call_main(common_args + [
             '-m',
             str(num),
             '--bucket-duration',
             '30',
         ], expected_code=1)
-        self.assertIn(' Error: Bucket duration mismatch 60 vs 30', output)
+        self.assertIn(' Error: Bucket duration mismatch 1 vs 30', output)
         #Lines weren't parsed, so keep remain's value
 
         num = int(self.log_numlines / 2)
@@ -92,7 +94,7 @@ class TestParser(unittest.TestCase):
             '-m',
             str(num),
         ])
-        self.assertIn(' parsed=%d ' % num, output)
+        self.assertIn('Sending 68 points', output)
         remain -= num
 
         num = remain
@@ -100,7 +102,7 @@ class TestParser(unittest.TestCase):
             '-m',
             str(num),
         ])
-        self.assertIn(' parsed=%d ' % num, output)
+        self.assertIn('Sending 68 points', output)
         remain -= num
 
         # All lines should have been parsed

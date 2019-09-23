@@ -41,7 +41,6 @@
 # For a full description of the license, please visit
 # http://www.gnu.org/licenses/gpl.txt
 #
-import json
 
 from mbstats.utils import bucket2time
 
@@ -130,10 +129,8 @@ class InfluxBackend(Backend):
             if logger:
                 if options.quiet < 2:
                     logger.info("Sending %d points" % len(points))
-                logger.debug(points[:100])
             if not self.client:
-                dump = json.dumps(points, indent=4, sort_keys=True)
-                raise BackendDryRun(dump)
+                raise BackendDryRun(points)
             return self.client.write_points(points, tags=tags, time_precision='m',
                                             batch_size=options.influx_batch_size)
         return True
