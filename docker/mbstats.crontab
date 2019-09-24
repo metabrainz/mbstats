@@ -1,5 +1,7 @@
-SHELL=/bin/sh
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+SHELL=/bin/bash
+VIRTUAL_ENV=/opt/venv
+PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MAILTO=""
 
-* * * * * root python -m mbstats -c /etc/container_environment.json --log-handler stdout --workdir /data > /dev/stdout 2>&1
+* * * * * root cd /mbstats && /mbstats/run -c /etc/container_environment.json --log-handler syslog --workdir /data
+

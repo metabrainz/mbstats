@@ -1,0 +1,11 @@
+#!/usr/bin/env python
+
+import os.path
+import sys
+
+mbstats_module_parent = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, mbstats_module_parent)
+
+from mbstats.app import main
+
+main()
