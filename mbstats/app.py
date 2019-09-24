@@ -298,9 +298,9 @@ def parsefile(tailer, status, options, logger=None):
                 parsed_lines += 1
                 try:
                     row, last_msec, bucket = parseline(line,
-                                               ignore_before=ignore_before,
-                                               bucket_duration=bucket_duration,
-                                               last_msec=last_msec)
+                                                       ignore_before=ignore_before,
+                                                       bucket_duration=bucket_duration,
+                                                       last_msec=last_msec)
                     storage[bucket].append(row)
                     ready_to_process = bucket - lookback_factor
 
@@ -511,11 +511,11 @@ def init_status(files, options, logger):
     logger.debug("main status: %r" % len(status))
 
     default_status = {
-        'last_msec': lambda : 0,
-        'leftover': lambda : None,
-        'bucket_duration': lambda : options.bucket_duration,
-        'lookback_factor': lambda : options.lookback_factor,
-        'saved_points': lambda : deque([], options.send_failure_fifo_size),
+        'last_msec': lambda: 0,
+        'leftover': lambda: None,
+        'bucket_duration': lambda: options.bucket_duration,
+        'lookback_factor': lambda: options.lookback_factor,
+        'saved_points': lambda: deque([], options.send_failure_fifo_size),
     }
     save = False
     for k in default_status:

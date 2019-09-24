@@ -52,7 +52,6 @@ except ImportError:
     has_influxdb = False
 
 
-
 MBS_TAGS = {
     'hits': ('vhost', 'protocol', 'loctag'),
     'hits_with_upstream': ('vhost', 'protocol', 'loctag'),

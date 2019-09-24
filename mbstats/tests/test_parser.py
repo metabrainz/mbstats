@@ -22,7 +22,7 @@ class TestParser(unittest.TestCase):
         # Create a temporary directory
         self.test_dir = tempfile.TemporaryDirectory()
         self.logfile = os.path.join(self.test_dir.name, 'nginx.log')
-        this_dir =  os.path.dirname(os.path.abspath(__file__))
+        this_dir = os.path.dirname(os.path.abspath(__file__))
         self.logfile_gz = os.path.join(this_dir, 'data', 'test1.log.gz')
 
         count = 0
@@ -40,7 +40,7 @@ class TestParser(unittest.TestCase):
     def tearDown(self):
         # Close the file, the directory will be removed after the test
         self.test_dir.cleanup()
-        #pass
+        # pass
 
     def test_A(self):
         output = self.call_main(['testing', '--dump-config', '--dry-run',
@@ -92,7 +92,7 @@ class TestParser(unittest.TestCase):
             '30',
         ], expected_code=1)
         self.assertIn(' Error: Bucket duration mismatch 1 vs 30', output)
-        #Lines weren't parsed, so keep remain's value
+        # Lines weren't parsed, so keep remain's value
 
         num = int(self.log_numlines / 2)
         output = self.call_main(common_args + [
@@ -154,7 +154,6 @@ class TestParser(unittest.TestCase):
             }
             result = parse_upstreams(upstreams)
 
-
         with self.assertRaises(ValueError):
             upstreams = {
                 'upstream_addr': '10.2.2.31:65412',
@@ -164,7 +163,6 @@ class TestParser(unittest.TestCase):
                 'upstream_header_time': 'x0.024'
             }
             result = parse_upstreams(upstreams)
-
 
     def test_parseline(self):
         line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'

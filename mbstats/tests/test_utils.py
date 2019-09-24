@@ -24,7 +24,7 @@ class TestUtils(unittest.TestCase):
         self.test_dir.cleanup()
 
     def test_lineno(self):
-        self.assertEqual(lineno(), 27)  # if this line moves, change the number
+        self.assertEqual(lineno(), 27)  #  if this line moves, change the number
 
     def test_save_load_obj(self):
         obj = {'test': 666}
