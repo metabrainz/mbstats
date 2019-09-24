@@ -1,20 +1,20 @@
-```
-usage: stats.parser.py [-h] [-f FILE] [-c FILE] [-d DATACENTER] [-H HOSTNAME]
-                       [-l LOG_DIR] [-n NAME] [-m MAX_LINES] [-w WORKDIR] [-y]
-                       [-q] [--influx-host INFLUX_HOST]
-                       [--influx-port INFLUX_PORT]
-                       [--influx-username INFLUX_USERNAME]
-                       [--influx-password INFLUX_PASSWORD]
-                       [--influx-database INFLUX_DATABASE]
-                       [--influx-timeout INFLUX_TIMEOUT]
-                       [--influx-batch-size INFLUX_BATCH_SIZE] [-D]
-                       [--influx-drop-database] [--locker {fcntl,portalocker}]
-                       [--lookback-factor LOOKBACK_FACTOR] [--startover]
-                       [--do-not-skip-to-end]
-                       [--bucket-duration BUCKET_DURATION]
-                       [--log-conf LOG_CONF] [--dump-config] [--syslog]
-                       [--send-failure-fifo-size SEND_FAILURE_FIFO_SIZE]
-                       [--simulate-send-failure]
+'''
+usage: __main__.py [-h] [-f FILE] [-c FILE] [-d DATACENTER] [-H HOSTNAME]
+                   [-l LOG_DIR] [-n NAME] [-m MAX_LINES] [-w WORKDIR] [-y]
+                   [-q] [--influx-host INFLUX_HOST]
+                   [--influx-port INFLUX_PORT]
+                   [--influx-username INFLUX_USERNAME]
+                   [--influx-password INFLUX_PASSWORD]
+                   [--influx-database INFLUX_DATABASE]
+                   [--influx-timeout INFLUX_TIMEOUT]
+                   [--influx-batch-size INFLUX_BATCH_SIZE] [-D]
+                   [--influx-drop-database] [--locker {fcntl,portalocker}]
+                   [--lookback-factor LOOKBACK_FACTOR] [--startover]
+                   [--do-not-skip-to-end] [--bucket-duration BUCKET_DURATION]
+                   [--log-conf LOG_CONF] [--dump-config]
+                   [--log-handler LOG_HANDLER]
+                   [--send-failure-fifo-size SEND_FAILURE_FIFO_SIZE]
+                   [--simulate-send-failure]
 
 Tail and parse a formatted nginx log file, sending results to InfluxDB.
 
@@ -72,45 +72,46 @@ expert arguments:
                         duration for each bucket in seconds
   --log-conf LOG_CONF   Logging configuration file. None by default
   --dump-config         dump config as json to stdout
-  --syslog              Log to syslog
+  --log-handler LOG_HANDLER
+                        Log to (syslog, file, stdout)
   --send-failure-fifo-size SEND_FAILURE_FIFO_SIZE
                         Number of failed sends to backup
   --simulate-send-failure
                         Simulate send failure for testing purposes
 
-To use add following to http section of your nginx configuration:
+    To use add following to http section of your nginx configuration:
 
-  log_format stats
-    '1|'
-    '$msec|'
-    '$host|'
-    '$statproto|'
-    '$loctag|'
-    '$status|'
-    '$bytes_sent|'
-    '$gzip_ratio|'
-    '$request_length|'
-    '$request_time|'
-    '$upstream_addr|'
-    '$upstream_status|'
-    '$upstream_response_time|'
-    '$upstream_connect_time|'
-    '$upstream_header_time';
+      log_format stats
+        '1|'
+        '$msec|'
+        '$host|'
+        '$statproto|'
+        '$loctag|'
+        '$status|'
+        '$bytes_sent|'
+        '$gzip_ratio|'
+        '$request_length|'
+        '$request_time|'
+        '$upstream_addr|'
+        '$upstream_status|'
+        '$upstream_response_time|'
+        '$upstream_connect_time|'
+        '$upstream_header_time';
 
-  map $host $loctag {
-    default '-';
-  }
+      map $host $loctag {
+        default '-';
+      }
 
-  map $https $statproto {
-    default '-';
-    on 's';
-  }
+      map $https $statproto {
+        default '-';
+        on 's';
+      }
 
-You can use $loctag to tag a specific location:
-    set $loctag "ws";
+    You can use $loctag to tag a specific location:
+        set $loctag "ws";
 
-In addition of your usual access log, add something like:
-    access_log /var/log/nginx/my.stats.log stats buffer=256k flush=10s
+    In addition of your usual access log, add something like:
+        access_log /var/log/nginx/my.stats.log stats buffer=256k flush=10s
 
-Note: first field in stats format declaration is a format version, it should be set to 1.
-```
+    Note: first field in stats format declaration is a format version, it should be set to 1.
+'''
