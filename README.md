@@ -1,4 +1,4 @@
-'''
+```
 usage: __main__.py [-h] [-f FILE] [-c FILE] [-d DATACENTER] [-H HOSTNAME]
                    [-l LOG_DIR] [-n NAME] [-m MAX_LINES] [-w WORKDIR] [-y]
                    [-q] [--influx-host INFLUX_HOST]
@@ -114,4 +114,4 @@ expert arguments:
         access_log /var/log/nginx/my.stats.log stats buffer=256k flush=10s
 
     Note: first field in stats format declaration is a format version, it should be set to 1.
-'''
+```
