@@ -1,4 +1,5 @@
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=""
 
-* * * * * root python -m mbstats -c /etc/container_environment.json --syslog --workdir /data > /dev/stdout 2>&1
+* * * * * root python -m mbstats -c /etc/container_environment.json --log-handler stdout --workdir /data > /dev/stdout 2>&1
