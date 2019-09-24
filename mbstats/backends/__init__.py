@@ -130,6 +130,18 @@ class InfluxBackend(Backend):
                     logger.info("Sending %d points" % len(points))
             if not self.client:
                 raise BackendDryRun(points)
+            for point in points:
+                if point['measurement'] == 'request_length_mean':
+                    # workaround for int vs float type issue
+                    val = point['fields']['value']
+                    if isinstance(val, str):
+                        newval = ''
+                        for c in val:
+                            if c.isdigit():
+                                newval += c
+                        val = newval
+                    if not isinstance(val, int):
+                        point['fields']['value'] = int(val)
             return self.client.write_points(points, tags=tags, time_precision='m',
                                             batch_size=options.influx_batch_size)
         return True
