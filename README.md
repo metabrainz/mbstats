@@ -115,3 +115,35 @@ expert arguments:
 
     Note: first field in stats format declaration is a format version, it should be set to 1.
 ```
+
+## Dev
+
+Installing dev requirements:
+
+```
+pip install -r requirements-dev.txt
+```
+
+Running source code checks (isort, pyflakes, pylint, ...):
+
+```
+make check
+```
+
+Running tests:
+
+```
+make test
+```
+
+or:
+
+```
+python setup.py test
+```
+
+Build docker image:
+
+```
+make dockerbuild
+```
