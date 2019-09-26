@@ -164,6 +164,16 @@ class TestParser(unittest.TestCase):
             }
             result = parse_upstreams(upstreams)
 
+        with self.assertRaises(ValueError):
+            upstreams = {
+                'upstream_addr': '10.2.2.31:65412',
+                'upstream_status': '20x',
+                'upstream_response_time': '0.024',
+                'upstream_connect_time': '0.000',
+                'upstream_header_time': '0.024'
+            }
+            result = parse_upstreams(upstreams)
+
     def test_parseline(self):
         line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
         row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
@@ -237,6 +247,12 @@ class TestParser(unittest.TestCase):
             line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|x0.024'
             row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200x|2799|2.5|289|0.026|10.2.2.31:65412|200|0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
+        with self.assertRaises(ValueError):
+            line = '1|1568962563.374|musicbrainz.org|s|ws|200|2799|2.5|289|0.026|10.2.2.31:65412|200x|0.024|0.000|0.024'
+            row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 if __name__ == '__main__':
     unittest.main()
