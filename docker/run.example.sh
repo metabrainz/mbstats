@@ -1,22 +1,30 @@
 #!/bin/bash
 
-LOGDIR=/var/log/
-FILE=mywebsite.stats.log
+start_mbstats() {
+	# full name of the file log
+    local FILE=$1
 
-NAME=$(echo -n $FILE |sed 's/\.stats.log$//')
-CONTAINER_NAME=mbstats-$NAME
-VOLUME_NAME=$CONTAINER_NAME
+	# full path to directory containing the log file
+    local LOGDIR=/var/docker-logs/openresty/var/log/nginx/
 
-docker volume create --driver local --name $VOLUME_NAME
+    local NAME=$(FILE%%.stats.log}
+    local CONTAINER_NAME=mbstats-$NAME
+    local VOLUME_NAME=$CONTAINER_NAME
 
-docker run \
-	--detach \
-	--restart unless-stopped \
-	--name $CONTAINER_NAME \
-	--hostname $(hostname -s) \
-	--volume $LOGDIR:/logs \
-	--volume $VOLUME_NAME:/data \
-	-e "file=/logs/$FILE" \
-	-e "influx_host=my.influx.host.example.org" \
-	--net=host \
-	mbstats /sbin/my_init
+    docker pull metabrainz/mbstats
+    docker volume create --driver local --name $VOLUME_NAME
+
+    docker run \
+        --detach \
+        --restart unless-stopped \
+        --name $CONTAINER_NAME \
+        --hostname $HOSTNAME \
+        --volume $LOGDIR:/logs \
+        --volume $VOLUME_NAME:/data \
+        -e "file=/logs/$FILE" \
+        -e "influx_host=stats.metabrainz.org" \
+        -e "debug=true" \
+        metabrainz/mbstats /sbin/my_init
+}
+
+mbstats "somefile.stats.log"
