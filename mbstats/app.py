@@ -614,7 +614,7 @@ def main():
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
                 except Exception as e:
-                    msg = "Influx send failed again: %s: %s" % (lineno(), e)
+                    msg = "Send failed again: %s: %s" % (lineno(), e)
                     traceback.print_exc()
                     logger.error(msg)
 
@@ -627,7 +627,7 @@ def main():
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
                 except Exception as e:
-                    msg = "Influx send: Exception caught at %s: %s" % (lineno(), e)
+                    msg = "Send: Exception caught at %s: %s" % (lineno(), e)
                     traceback.print_exc()
                     logger.error(msg)
                     status['saved_points'].append(backend.points)
