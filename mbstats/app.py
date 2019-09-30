@@ -162,7 +162,7 @@ def parse_upstreams(row):
 
         # ensure status code is an integer (but it is stored as string), this
         # should raise ValueError if it can't be converted
-        status = int(item[1])
+        int(item[1])
         if item[1] in r['status'][k]:
             r['status'][k][item[1]] += 1
         else:
