@@ -62,10 +62,8 @@ import traceback
 
 from pygtail import Pygtail
 
-from mbstats.backends import (
-    BackendDryRun,
-    InfluxBackend,
-)
+from mbstats.backends import BackendDryRun
+from mbstats.backends.influxdb import InfluxBackend
 from mbstats.cmdline_options import (
     ParseOptionsSysExit,
     parse_options,
