@@ -1,3 +1,6 @@
+[![CircleCI](https://circleci.com/gh/metabrainz/mbstats/tree/master.svg?style=svg)](https://circleci.com/gh/metabrainz/mbstats/tree/master)
+
+
 ```
 usage: __main__.py [-h] [-f FILE] [-c FILE] [-d DATACENTER] [-H HOSTNAME]
                    [-l LOG_DIR] [-n NAME] [-m MAX_LINES] [-w WORKDIR] [-y]
