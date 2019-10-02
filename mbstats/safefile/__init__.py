@@ -60,7 +60,8 @@ class SafeFile(object):
         self.logger = logger
 
     def suffixed(self, suffix):
-        return SafeFile(self.workdir, self.identifier, suffix='.' + suffix)
+        return SafeFile(self.workdir, self.identifier, suffix='.' + suffix,
+                        logger=self.logger)
 
     def backup_main(self):
         try:
