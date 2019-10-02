@@ -541,11 +541,14 @@ def main():
     parsed_lines = 0
     skipped_lines = 0
     try:
-        safefile = SafeFile(os.path.abspath(options.workdir), options.file)
+        workdir = os.path.abspath(options.workdir)
         files = {
-            'offset': safefile.suffixed('offset'),
-            'status': safefile.suffixed('status'),
-            'lock': safefile.suffixed('lock')
+            'offset': SafeFile(workdir, options.file, suffix='.offset',
+                               logger=logger),
+            'status': SafeFile(workdir, options.file, suffix='.status',
+                               logger=logger),
+            'lock': SafeFile(workdir, options.file, suffix='.lock',
+                             logger=logger),
         }
 
         # Check for lock file so we don't run multiple copies of the same parser

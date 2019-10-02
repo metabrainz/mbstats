@@ -59,10 +59,6 @@ class SafeFile(object):
         self.lock = "%s.lock" % (self.main)
         self.logger = logger
 
-    def suffixed(self, suffix):
-        return SafeFile(self.workdir, self.identifier, suffix='.' + suffix,
-                        logger=self.logger)
-
     def backup_main(self):
         try:
             if os.path.isfile(self.old):
