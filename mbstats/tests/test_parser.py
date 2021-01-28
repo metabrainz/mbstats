@@ -353,6 +353,17 @@ class TestParser(unittest.TestCase):
         self.assertEqual(row['upstreams']['servers_contacted'], 1)
         self.assertEqual(row['upstreams']['internal_redirects'], 1)
 
+    def test_parseline_upstream_no_status(self):
+        line = "1|1611749281.126|critiquebrainz.org|s|-|499|0|-|408|0.414|10.2.2.39:13032|-|0.412|-|-"
+        row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+        self.assertIn('upstreams', row)
+        addr = '10.2.2.39:13032'
+        self.assertIn(addr, row['upstreams']['response_time'])
+        self.assertIn(addr, row['upstreams']['connect_time'])
+        self.assertIn(addr, row['upstreams']['header_time'])
+        self.assertIn(addr, row['upstreams']['servers'])
+        self.assertIn(addr, row['upstreams']['status'])
+
     def test_parseline_upstream_response_time_invalid(self):
         line = self.get_sample_line(PosField.upstream_response_time, replace_with='xxx')
         with self.assertRaisesRegex(ParseSkip, "^could not convert string to float: 'xxx'$"):

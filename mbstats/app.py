@@ -162,11 +162,15 @@ def parse_upstreams(row):
 
         # ensure status code is an integer (but it is stored as string), this
         # should raise ValueError if it can't be converted
-        int(item[1])
-        if item[1] in r['status'][k]:
-            r['status'][k][item[1]] += 1
+        if item[1] != '-':
+            status = str(int(item[1]))
         else:
-            r['status'][k][item[1]] = 1
+            status = item[1]
+        if status in r['status'][k]:
+            r['status'][k][status] += 1
+        else:
+            r['status'][k][status] = 1
+
 
         # FIXME: returning 0.0 when '-' is incorrect, and make mean calculations incorrect
         try:
