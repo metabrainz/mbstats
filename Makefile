@@ -16,6 +16,6 @@ coverage:
 	coverage run -m unittest discover mbstats/tests/
 
 dockerbuild:
-	docker build -t mbstats -f docker/Dockerfile .
+	docker build -t mbstats -f Dockerfile .
 
 .PHONY: init test
