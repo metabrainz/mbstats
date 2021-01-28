@@ -121,6 +121,24 @@ expert arguments:
 
 ## Dev
 
+Creating virtual env:
+
+```
+python3 -m venv .venv
+```
+
+Activate virtual env:
+
+```
+source .venv/bin/activate
+```
+
+Install wheel:
+
+```
+pip install wheel
+```
+
 Installing dev requirements:
 
 ```
