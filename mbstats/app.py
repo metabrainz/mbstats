@@ -168,6 +168,7 @@ def parse_upstreams(row):
         else:
             r['status'][k][item[1]] = 1
 
+        # FIXME: returning 0.0 when '-' is incorrect, and make mean calculations incorrect
         try:
             r['response_time'][k] += float(item[2])
         except ValueError:
