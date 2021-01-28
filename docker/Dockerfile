@@ -20,6 +20,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
         apt-get update -y  && \
         apt-get install -y python3.6 python3-pip python3.6-venv && \
         python3.6 -m pip install pip --upgrade && \
+        python3.6 -m pip install setuptools --upgrade && \
         python3.6 -m pip install wheel && \
 	apt -y autoremove && \
 	rm -rf /var/lib/apt/lists/*
