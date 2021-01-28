@@ -5,7 +5,7 @@ initdev:
 	pip install -r requirements-dev.txt
 
 check: initdev
-	-isort -c -rc -df mbstats/
+	-isort --check-only --diff mbstats/
 	-pyflakes mbstats/
 	-pylint mbstats/
 	
