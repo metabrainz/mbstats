@@ -199,40 +199,48 @@ class ParseSkip(Exception):
 
 def parseline(line, last_msec=0, ignore_before=0, bucket_duration=60):
     items = line.split('|')
-    msec = float(items[PosField.msec])
+    if items[0] != '1':
+        raise ParseSkip("invalid log version: {}".format(items[0]))
+    try:
+        msec = float(items[PosField.msec])
+    except ValueError as e:
+        raise ParseSkip(str(e))
     if msec <= ignore_before:
         # skip unordered & old entries
-        raise ParseSkip
+        raise ParseSkip("unordered or old entry")
+    try:
+        row = {
+            'vhost': items[PosField.vhost],
+            'protocol': items[PosField.protocol],
+            'loctag': items[PosField.loctag],
+            'status': int(items[PosField.status]),
+            'bytes_sent': int(items[PosField.bytes_sent]),
+            'request_length': int(items[PosField.request_length]),
+        }
+
+        if items[PosField.gzip_ratio] != '-':
+            row['gzip_ratio'] = float(items[PosField.gzip_ratio])
+        if items[PosField.request_time] != '-':
+            row['request_time'] = float(items[PosField.request_time])
+
+        if items[PosField.upstream_addr] != '-':
+            # Note : last element contains trailing new line character
+            # from readline()
+            upstreams = {
+                'upstream_addr': items[PosField.upstream_addr],
+                'upstream_status': items[PosField.upstream_status],
+                'upstream_response_time': items[PosField.upstream_response_time],
+                'upstream_connect_time': items[PosField.upstream_connect_time],
+                'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
+            }
+
+            row['upstreams'] = parse_upstreams(upstreams)
+    except ValueError as e:
+        raise ParseSkip(str(e))
+
     if msec > last_msec:
         last_msec = msec
     bucket = msec2bucket(msec, bucket_duration)
-
-    row = {
-        'vhost': items[PosField.vhost],
-        'protocol': items[PosField.protocol],
-        'loctag': items[PosField.loctag],
-        'status': int(items[PosField.status]),
-        'bytes_sent': int(items[PosField.bytes_sent]),
-        'request_length': int(items[PosField.request_length]),
-    }
-
-    if items[PosField.gzip_ratio] != '-':
-        row['gzip_ratio'] = float(items[PosField.gzip_ratio])
-    if items[PosField.request_time] != '-':
-        row['request_time'] = float(items[PosField.request_time])
-
-    if items[PosField.upstream_addr] != '-':
-        # Note : last element contains trailing new line character
-        # from readline()
-        upstreams = {
-            'upstream_addr': items[PosField.upstream_addr],
-            'upstream_status': items[PosField.upstream_status],
-            'upstream_response_time': items[PosField.upstream_response_time],
-            'upstream_connect_time': items[PosField.upstream_connect_time],
-            'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
-        }
-
-        row['upstreams'] = parse_upstreams(upstreams)
 
     return row, last_msec, bucket
 
@@ -313,7 +321,9 @@ def parsefile(tailer, status, options, logger=None):
                                                      status['bucket_duration']),
                                          len(storage[ready_to_process])))
                         process_bucket(ready_to_process, storage, status, mbs)
-                except ParseSkip:
+                except ParseSkip as e:
+                    if logger:
+                        logger.error("%s: %s" % (line, e))
                     skipped_lines += 1
                 except Exception as e:
                     if logger:
