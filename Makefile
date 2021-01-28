@@ -10,7 +10,7 @@ check: initdev
 	-pylint mbstats/
 	
 test:
-	python -m unittest discover mbstats/tests/
+	python -m unittest discover -v mbstats/tests/
 
 coverage:
 	coverage run -m unittest discover mbstats/tests/

@@ -3,5 +3,5 @@ VIRTUAL_ENV=/opt/venv
 PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MAILTO=""
 
-* * * * * root /mbstats/run -c /etc/container_environment.json --log-handler syslog --workdir /data
+* * * * * root /opt/mbstats/mbstats/run -c /etc/container_environment.json --log-handler syslog --workdir /data
 
