@@ -7,11 +7,11 @@ import tempfile
 import unittest
 
 from mbstats.app import (
+    ParseSkip,
+    PosField,
     main,
     parse_upstreams,
     parseline,
-    ParseSkip,
-    PosField
 )
 
 

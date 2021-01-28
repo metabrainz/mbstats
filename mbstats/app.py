@@ -60,8 +60,6 @@ import sys
 from time import time
 import traceback
 
-from pygtail import Pygtail
-
 from mbstats.backends import BackendDryRun
 from mbstats.backends.influxdb import InfluxBackend
 from mbstats.cmdline_options import (
@@ -80,6 +78,8 @@ from mbstats.utils import (
     msec2bucket,
     save_obj,
 )
+
+from pygtail import Pygtail
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
