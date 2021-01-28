@@ -32,6 +32,8 @@ jobs:
           command: |
             python3 -m venv venv
             . venv/bin/activate
+            pip install --upgrade pip
+            pip install --upgrade setuptools
             pip install -r requirements-dev.txt
             make check
 
@@ -49,6 +51,8 @@ jobs:
           name: run tests
           command: |
             . venv/bin/activate
+            pip install --upgrade pip
+            pip install --upgrade setuptools
             python setup.py test
 
       - store_artifacts:
