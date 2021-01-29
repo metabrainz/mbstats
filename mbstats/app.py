@@ -254,6 +254,10 @@ def parseline(line, last_msec=0, ignore_before=0, bucket_duration=60):
     return row, last_msec, bucket
 
 
+def get_storage():
+    return defaultdict(deque)
+
+
 def parsefile(tailer, status, options, logger=None):
     parsed_lines = 0
     skipped_lines = 0
@@ -282,7 +286,7 @@ def parsefile(tailer, status, options, logger=None):
                 logger.info("Previous leftover bucket: %s %d" %
                             (bucket2time(bucket, status['bucket_duration']), len(storage[bucket])))
     else:
-        storage = defaultdict(deque)
+        storage = get_storage()
         if logger:
             logger.info("First run")
         first_run = not options.do_not_skip_to_end
@@ -347,7 +351,7 @@ def parsefile(tailer, status, options, logger=None):
 
     tailer._update_offset_file()
     last_bucket = bucket
-    leftover = defaultdict(deque)
+    leftover = get_storage()
     for bucket in storage:
         if storage[bucket] and bucket >= last_bucket - lookback_factor:
             leftover[bucket] = storage[bucket]
