@@ -208,11 +208,20 @@ class TestParser(unittest.TestCase):
                 'response_time': {
                     '10.2.2.31:65412': 0.024
                 },
+                'response_time_count': {
+                    '10.2.2.31:65412': 1
+                },
                 'connect_time': {
                     '10.2.2.31:65412': 0.0
                 },
+                'connect_time_count': {
+                    '10.2.2.31:65412': 1
+                },
                 'header_time': {
                     '10.2.2.31:65412': 0.024
+                },
+                'header_time_count': {
+                    '10.2.2.31:65412': 1
                 },
                 'servers': ['10.2.2.31:65412']
             }
@@ -347,6 +356,9 @@ class TestParser(unittest.TestCase):
             self.assertIn(addr, row['upstreams']['response_time'])
             self.assertIn(addr, row['upstreams']['connect_time'])
             self.assertIn(addr, row['upstreams']['header_time'])
+            self.assertIn(addr, row['upstreams']['response_time_count'])
+            self.assertIn(addr, row['upstreams']['connect_time_count'])
+            self.assertIn(addr, row['upstreams']['header_time_count'])
             self.assertIn(addr, row['upstreams']['servers'])
             self.assertIn(addr, row['upstreams']['status'])
             self.assertEqual(row['upstreams']['status'][addr], {'200': 1})
@@ -359,8 +371,8 @@ class TestParser(unittest.TestCase):
         self.assertIn('upstreams', row)
         addr = '10.2.2.39:13032'
         self.assertIn(addr, row['upstreams']['response_time'])
-        self.assertIn(addr, row['upstreams']['connect_time'])
-        self.assertIn(addr, row['upstreams']['header_time'])
+        self.assertNotIn(addr, row['upstreams']['connect_time'])
+        self.assertNotIn(addr, row['upstreams']['header_time'])
         self.assertIn(addr, row['upstreams']['servers'])
         self.assertIn(addr, row['upstreams']['status'])
 

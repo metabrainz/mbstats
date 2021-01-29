@@ -146,6 +146,9 @@ def parse_upstreams(row):
     r['response_time'] = defaultdict(float)
     r['connect_time'] = defaultdict(float)
     r['header_time'] = defaultdict(float)
+    r['response_time_count'] = defaultdict(int)
+    r['connect_time_count'] = defaultdict(int)
+    r['header_time_count'] = defaultdict(int)
     r['servers'] = []
     for item in zip(upstream_addr,
                     upstream_status,
@@ -171,24 +174,25 @@ def parse_upstreams(row):
         else:
             r['status'][k][status] = 1
 
-
-        # FIXME: returning 0.0 when '-' is incorrect, and make mean calculations incorrect
-        try:
-            r['response_time'][k] += float(item[2])
-        except ValueError:
-            if item[2] not in ('-', ''):
+        if item[2] not in ('-', ''):
+            try:
+                r['response_time'][k] += float(item[2])
+                r['response_time_count'][k] += 1
+            except ValueError:
                 raise
 
-        try:
-            r['connect_time'][k] += float(item[3])
-        except ValueError:
-            if item[3] not in ('-', ''):
+        if item[3] not in ('-', ''):
+            try:
+                r['connect_time'][k] += float(item[3])
+                r['connect_time_count'][k] += 1
+            except ValueError:
                 raise
 
-        try:
-            r['header_time'][k] += float(item[4])
-        except ValueError:
-            if item[4] not in ('-', ''):
+        if item[4] not in ('-', ''):
+            try:
+                r['header_time'][k] += float(item[4])
+                r['header_time_count'][k] += 1
+            except ValueError:
                 raise
 
     return r
@@ -376,13 +380,16 @@ def mbsdict():
         'status': defaultdict(int),
         'upstreams_connect_time_mean': defaultdict(float),
         '_upstreams_connect_time_premean': defaultdict(float),
+        '_upstreams_connect_time_count_premean': defaultdict(int),
         'upstreams_header_time_mean': defaultdict(float),
         '_upstreams_header_time_premean': defaultdict(float),
+        '_upstreams_header_time_count_premean': defaultdict(int),
         'upstreams_hits': defaultdict(int),
         '_upstreams_internal_redirects': defaultdict(int),
         'upstreams_internal_redirects_per_hit': defaultdict(int),
         'upstreams_response_time_mean': defaultdict(float),
         '_upstreams_response_time_premean': defaultdict(float),
+        '_upstreams_response_time_count_premean': defaultdict(int),
         '_upstreams_servers_contacted': defaultdict(int),
         'upstreams_servers_contacted_per_hit': defaultdict(float),
         'upstreams_servers': defaultdict(int),
@@ -425,6 +432,9 @@ def process_bucket(bucket, storage, status, mbs):
                     mbs['_upstreams_response_time_premean'][tags] += ru['response_time'][upstream]
                     mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][upstream]
                     mbs['_upstreams_header_time_premean'][tags] += ru['header_time'][upstream]
+                    mbs['_upstreams_response_time_count_premean'][tags] += ru['response_time_count'][upstream]
+                    mbs['_upstreams_connect_time_count_premean'][tags] += ru['connect_time_count'][upstream]
+                    mbs['_upstreams_header_time_count_premean'][tags] += ru['header_time_count'][upstream]
                     for status_ in ru['status'][upstream]:
                         tags = (bucket, row['vhost'], row['protocol'], row['loctag'],
                                 upstream, status_)
@@ -454,14 +464,14 @@ def mbspostprocess(mbs):
     if mbs['upstreams_hits']:
         for k, v in list(mbs['_upstreams_response_time_premean'].items()):
             mbs['upstreams_response_time_mean'][k] = v / \
-                mbs['upstreams_hits'][k]
+                mbs['_upstreams_response_time_count_premean'][k]
 
         for k, v in list(mbs['_upstreams_connect_time_premean'].items()):
             mbs['upstreams_connect_time_mean'][k] = v / \
-                mbs['upstreams_hits'][k]
+                mbs['_upstreams_connect_time_count_premean'][k]
 
         for k, v in list(mbs['_upstreams_header_time_premean'].items()):
-            mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
+            mbs['upstreams_header_time_mean'][k] = v / mbs['_upstreams_header_time_count_premean'][k]
 
         for k, v in list(mbs['_upstreams_servers_contacted'].items()):
             mbs['upstreams_servers_contacted_per_hit'][k] = float(
