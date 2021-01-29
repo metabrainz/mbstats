@@ -5,17 +5,17 @@ initdev:
 	pip install -r requirements-dev.txt
 
 check: initdev
-	-isort -c -rc -df mbstats/
+	-isort --check-only --diff mbstats/
 	-pyflakes mbstats/
 	-pylint mbstats/
 	
 test:
-	python -m unittest discover mbstats/tests/
+	python -m unittest discover -v mbstats/tests/
 
 coverage:
 	coverage run -m unittest discover mbstats/tests/
 
 dockerbuild:
-	docker build -t mbstats -f docker/Dockerfile .
+	docker build -t mbstats -f Dockerfile .
 
 .PHONY: init test

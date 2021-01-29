@@ -60,8 +60,6 @@ import sys
 from time import time
 import traceback
 
-from pygtail import Pygtail
-
 from mbstats.backends import BackendDryRun
 from mbstats.backends.influxdb import InfluxBackend
 from mbstats.cmdline_options import (
@@ -80,6 +78,8 @@ from mbstats.utils import (
     msec2bucket,
     save_obj,
 )
+
+from pygtail import Pygtail
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
@@ -146,6 +146,9 @@ def parse_upstreams(row):
     r['response_time'] = defaultdict(float)
     r['connect_time'] = defaultdict(float)
     r['header_time'] = defaultdict(float)
+    r['response_time_count'] = defaultdict(int)
+    r['connect_time_count'] = defaultdict(int)
+    r['header_time_count'] = defaultdict(int)
     r['servers'] = []
     for item in zip(upstream_addr,
                     upstream_status,
@@ -162,28 +165,34 @@ def parse_upstreams(row):
 
         # ensure status code is an integer (but it is stored as string), this
         # should raise ValueError if it can't be converted
-        int(item[1])
-        if item[1] in r['status'][k]:
-            r['status'][k][item[1]] += 1
+        if item[1] != '-':
+            status = str(int(item[1]))
         else:
-            r['status'][k][item[1]] = 1
+            status = item[1]
+        if status in r['status'][k]:
+            r['status'][k][status] += 1
+        else:
+            r['status'][k][status] = 1
 
-        try:
-            r['response_time'][k] += float(item[2])
-        except ValueError:
-            if item[2] not in ('-', ''):
+        if item[2] not in ('-', ''):
+            try:
+                r['response_time'][k] += float(item[2])
+                r['response_time_count'][k] += 1
+            except ValueError:
                 raise
 
-        try:
-            r['connect_time'][k] += float(item[3])
-        except ValueError:
-            if item[3] not in ('-', ''):
+        if item[3] not in ('-', ''):
+            try:
+                r['connect_time'][k] += float(item[3])
+                r['connect_time_count'][k] += 1
+            except ValueError:
                 raise
 
-        try:
-            r['header_time'][k] += float(item[4])
-        except ValueError:
-            if item[4] not in ('-', ''):
+        if item[4] not in ('-', ''):
+            try:
+                r['header_time'][k] += float(item[4])
+                r['header_time_count'][k] += 1
+            except ValueError:
                 raise
 
     return r
@@ -199,42 +208,54 @@ class ParseSkip(Exception):
 
 def parseline(line, last_msec=0, ignore_before=0, bucket_duration=60):
     items = line.split('|')
-    msec = float(items[PosField.msec])
+    if items[0] != '1':
+        raise ParseSkip("invalid log version: {}".format(items[0]))
+    try:
+        msec = float(items[PosField.msec])
+    except ValueError as e:
+        raise ParseSkip(str(e))
     if msec <= ignore_before:
         # skip unordered & old entries
-        raise ParseSkip
+        raise ParseSkip("unordered or old entry")
+    try:
+        row = {
+            'vhost': items[PosField.vhost],
+            'protocol': items[PosField.protocol],
+            'loctag': items[PosField.loctag],
+            'status': int(items[PosField.status]),
+            'bytes_sent': int(items[PosField.bytes_sent]),
+            'request_length': int(items[PosField.request_length]),
+        }
+
+        if items[PosField.gzip_ratio] != '-':
+            row['gzip_ratio'] = float(items[PosField.gzip_ratio])
+        if items[PosField.request_time] != '-':
+            row['request_time'] = float(items[PosField.request_time])
+
+        if items[PosField.upstream_addr] != '-':
+            # Note : last element contains trailing new line character
+            # from readline()
+            upstreams = {
+                'upstream_addr': items[PosField.upstream_addr],
+                'upstream_status': items[PosField.upstream_status],
+                'upstream_response_time': items[PosField.upstream_response_time],
+                'upstream_connect_time': items[PosField.upstream_connect_time],
+                'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
+            }
+
+            row['upstreams'] = parse_upstreams(upstreams)
+    except ValueError as e:
+        raise ParseSkip(str(e))
+
     if msec > last_msec:
         last_msec = msec
     bucket = msec2bucket(msec, bucket_duration)
 
-    row = {
-        'vhost': items[PosField.vhost],
-        'protocol': items[PosField.protocol],
-        'loctag': items[PosField.loctag],
-        'status': int(items[PosField.status]),
-        'bytes_sent': int(items[PosField.bytes_sent]),
-        'request_length': int(items[PosField.request_length]),
-    }
-
-    if items[PosField.gzip_ratio] != '-':
-        row['gzip_ratio'] = float(items[PosField.gzip_ratio])
-    if items[PosField.request_time] != '-':
-        row['request_time'] = float(items[PosField.request_time])
-
-    if items[PosField.upstream_addr] != '-':
-        # Note : last element contains trailing new line character
-        # from readline()
-        upstreams = {
-            'upstream_addr': items[PosField.upstream_addr],
-            'upstream_status': items[PosField.upstream_status],
-            'upstream_response_time': items[PosField.upstream_response_time],
-            'upstream_connect_time': items[PosField.upstream_connect_time],
-            'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
-        }
-
-        row['upstreams'] = parse_upstreams(upstreams)
-
     return row, last_msec, bucket
+
+
+def get_storage():
+    return defaultdict(deque)
 
 
 def parsefile(tailer, status, options, logger=None):
@@ -265,7 +286,7 @@ def parsefile(tailer, status, options, logger=None):
                 logger.info("Previous leftover bucket: %s %d" %
                             (bucket2time(bucket, status['bucket_duration']), len(storage[bucket])))
     else:
-        storage = defaultdict(deque)
+        storage = get_storage()
         if logger:
             logger.info("First run")
         first_run = not options.do_not_skip_to_end
@@ -313,7 +334,9 @@ def parsefile(tailer, status, options, logger=None):
                                                      status['bucket_duration']),
                                          len(storage[ready_to_process])))
                         process_bucket(ready_to_process, storage, status, mbs)
-                except ParseSkip:
+                except ParseSkip as e:
+                    if logger:
+                        logger.error("%s: %s" % (line, e))
                     skipped_lines += 1
                 except Exception as e:
                     if logger:
@@ -328,7 +351,7 @@ def parsefile(tailer, status, options, logger=None):
 
     tailer._update_offset_file()
     last_bucket = bucket
-    leftover = defaultdict(deque)
+    leftover = get_storage()
     for bucket in storage:
         if storage[bucket] and bucket >= last_bucket - lookback_factor:
             leftover[bucket] = storage[bucket]
@@ -361,13 +384,16 @@ def mbsdict():
         'status': defaultdict(int),
         'upstreams_connect_time_mean': defaultdict(float),
         '_upstreams_connect_time_premean': defaultdict(float),
+        '_upstreams_connect_time_count_premean': defaultdict(int),
         'upstreams_header_time_mean': defaultdict(float),
         '_upstreams_header_time_premean': defaultdict(float),
+        '_upstreams_header_time_count_premean': defaultdict(int),
         'upstreams_hits': defaultdict(int),
         '_upstreams_internal_redirects': defaultdict(int),
         'upstreams_internal_redirects_per_hit': defaultdict(int),
         'upstreams_response_time_mean': defaultdict(float),
         '_upstreams_response_time_premean': defaultdict(float),
+        '_upstreams_response_time_count_premean': defaultdict(int),
         '_upstreams_servers_contacted': defaultdict(int),
         'upstreams_servers_contacted_per_hit': defaultdict(float),
         'upstreams_servers': defaultdict(int),
@@ -410,6 +436,9 @@ def process_bucket(bucket, storage, status, mbs):
                     mbs['_upstreams_response_time_premean'][tags] += ru['response_time'][upstream]
                     mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][upstream]
                     mbs['_upstreams_header_time_premean'][tags] += ru['header_time'][upstream]
+                    mbs['_upstreams_response_time_count_premean'][tags] += ru['response_time_count'][upstream]
+                    mbs['_upstreams_connect_time_count_premean'][tags] += ru['connect_time_count'][upstream]
+                    mbs['_upstreams_header_time_count_premean'][tags] += ru['header_time_count'][upstream]
                     for status_ in ru['status'][upstream]:
                         tags = (bucket, row['vhost'], row['protocol'], row['loctag'],
                                 upstream, status_)
@@ -439,14 +468,14 @@ def mbspostprocess(mbs):
     if mbs['upstreams_hits']:
         for k, v in list(mbs['_upstreams_response_time_premean'].items()):
             mbs['upstreams_response_time_mean'][k] = v / \
-                mbs['upstreams_hits'][k]
+                mbs['_upstreams_response_time_count_premean'][k]
 
         for k, v in list(mbs['_upstreams_connect_time_premean'].items()):
             mbs['upstreams_connect_time_mean'][k] = v / \
-                mbs['upstreams_hits'][k]
+                mbs['_upstreams_connect_time_count_premean'][k]
 
         for k, v in list(mbs['_upstreams_header_time_premean'].items()):
-            mbs['upstreams_header_time_mean'][k] = v / mbs['upstreams_hits'][k]
+            mbs['upstreams_header_time_mean'][k] = v / mbs['_upstreams_header_time_count_premean'][k]
 
         for k, v in list(mbs['_upstreams_servers_contacted'].items()):
             mbs['upstreams_servers_contacted_per_hit'][k] = float(
@@ -502,6 +531,16 @@ def init_logger(options):
     return logger
 
 
+def get_default_status(bucket_duration, lookback_factor, send_failure_fifo_size):
+    return {
+        'last_msec': lambda: 0,
+        'leftover': lambda: None,
+        'bucket_duration': lambda: bucket_duration,
+        'lookback_factor': lambda: lookback_factor,
+        'saved_points': lambda: deque([], send_failure_fifo_size),
+    }
+
+
 def init_status(files, options, logger):
     status = {}
     try:
@@ -512,17 +551,10 @@ def init_status(files, options, logger):
 
     logger.debug("main status: %r" % len(status))
 
-    default_status = {
-        'last_msec': lambda: 0,
-        'leftover': lambda: None,
-        'bucket_duration': lambda: options.bucket_duration,
-        'lookback_factor': lambda: options.lookback_factor,
-        'saved_points': lambda: deque([], options.send_failure_fifo_size),
-    }
     save = False
-    for k in default_status:
+    for k, v in get_default_status(options.bucket_duration, options.lookback_factor, options.send_failure_fifo_size).items():
         if k not in status:
-            status[k] = default_status[k]()
+            status[k] = v()
             save = True
     if save:
         save_obj(status, files['status'].tmp, logger=logger)
