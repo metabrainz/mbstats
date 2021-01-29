@@ -531,6 +531,16 @@ def init_logger(options):
     return logger
 
 
+def get_default_status(bucket_duration, lookback_factor, send_failure_fifo_size):
+    return {
+        'last_msec': lambda: 0,
+        'leftover': lambda: None,
+        'bucket_duration': lambda: bucket_duration,
+        'lookback_factor': lambda: lookback_factor,
+        'saved_points': lambda: deque([], send_failure_fifo_size),
+    }
+
+
 def init_status(files, options, logger):
     status = {}
     try:
@@ -541,17 +551,10 @@ def init_status(files, options, logger):
 
     logger.debug("main status: %r" % len(status))
 
-    default_status = {
-        'last_msec': lambda: 0,
-        'leftover': lambda: None,
-        'bucket_duration': lambda: options.bucket_duration,
-        'lookback_factor': lambda: options.lookback_factor,
-        'saved_points': lambda: deque([], options.send_failure_fifo_size),
-    }
     save = False
-    for k in default_status:
+    for k, v in get_default_status(options.bucket_duration, options.lookback_factor, options.send_failure_fifo_size).items():
         if k not in status:
-            status[k] = default_status[k]()
+            status[k] = v()
             save = True
     if save:
         save_obj(status, files['status'].tmp, logger=logger)
