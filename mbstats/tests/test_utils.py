@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from mbstats.utils import (
+    _read_config,
     bucket2time,
     lineno,
     load_obj,
@@ -24,7 +25,7 @@ class TestUtils(unittest.TestCase):
         self.test_dir.cleanup()
 
     def test_lineno(self):
-        self.assertEqual(lineno(), 27)  #  if this line moves, change the number
+        self.assertEqual(lineno(), 28)  #  if this line moves, change the number
 
     def test_save_load_obj(self):
         obj = {'test': 666}
@@ -33,20 +34,62 @@ class TestUtils(unittest.TestCase):
         read_obj = load_obj(filepath)
         self.assertEqual(obj, read_obj)
 
-    def test_read_config(self):
+    def test_read_json_config(self):
         conf_file = os.path.join(self.test_dir.name, 'config')
         payload = '{a: 1}'
         with open(conf_file, 'w') as f:
             f.write(payload)
 
         with self.assertRaises(JSONDecodeError):
-            config = read_config(conf_file)
+            config = _read_config(conf_file)
 
         payload = '{"a": 1}'
         with open(conf_file, 'w') as f:
             f.write(payload)
-        config = json.dumps(read_config(conf_file))
+        config = json.dumps(_read_config(conf_file))
         self.assertEqual(payload, config)
+
+    def test_read_config1(self):
+        defaults_options = {
+            'intval': 2,
+            'strval': "abc",
+            'boolval': True,
+        }
+        conf_file = os.path.join(self.test_dir.name, 'config')
+        payload = '{"intval": 1, "strval": "def", "boolval": false}'
+        with open(conf_file, 'w') as f:
+            f.write(payload)
+
+        read_config(conf_file, defaults_options)
+        self.assertEqual(defaults_options['intval'], 1)
+        self.assertEqual(defaults_options['strval'], 'def')
+        self.assertEqual(defaults_options['boolval'], False)
+
+    def test_read_config2(self):
+        defaults_options = {
+            'intval': 2,
+            'boolval': True,
+        }
+        conf_file = os.path.join(self.test_dir.name, 'config')
+        payload = '{"intval": "1", "boolval": "FaLsE"}'
+        with open(conf_file, 'w') as f:
+            f.write(payload)
+
+        read_config(conf_file, defaults_options)
+        self.assertEqual(defaults_options['intval'], 1)
+        self.assertEqual(defaults_options['boolval'], False)
+
+    def test_read_config3(self):
+        defaults_options = {
+            'boolval': False,
+        }
+        conf_file = os.path.join(self.test_dir.name, 'config')
+        payload = '{"boolval": "TRUE"}'
+        with open(conf_file, 'w') as f:
+            f.write(payload)
+
+        read_config(conf_file, defaults_options)
+        self.assertEqual(defaults_options['boolval'], True)
 
     def test_bucket2time(self):
         msec = 1568962553.325

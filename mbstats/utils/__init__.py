@@ -84,6 +84,28 @@ def msec2bucket(msec, bucket_duration):
     return int(math.ceil(float(msec) / float(bucket_duration)))
 
 
-def read_config(conf_path):
+def _read_config(conf_path):
     with open(conf_path, 'r') as f:
         return json.load(f)
+
+
+def read_config(conf_path, defaults_options):
+    config = _read_config(conf_path)
+    for k in config:
+        if k not in defaults_options:
+            continue
+        if k == 'config':
+            continue
+        if isinstance(defaults_options[k], bool):
+            if not isinstance(config[k], bool):
+                if isinstance(config[k], int):
+                    config[k] = config[k] != 0
+                else:
+                    config[k] = config[k].lower() != 'false'
+        elif isinstance(defaults_options[k], int):
+            if not isinstance(config[k], int):
+                try:
+                    config[k] = int(config[k])
+                except ValueError:
+                    continue
+        defaults_options[k] = config[k]

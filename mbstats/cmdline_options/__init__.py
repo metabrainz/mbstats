@@ -139,13 +139,7 @@ def parse_options():
     if args.config:
         for conf_path in args.config:
             default_options['config'].append(conf_path)
-            config = read_config(conf_path)
-            for k in config:
-                if k not in default_options:
-                    continue
-                if k == 'config':
-                    continue
-                default_options[k] = config[k]
+            read_config(conf_path, default_options)
 
     parser = argparse.ArgumentParser(description=description, epilog=epilog,
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
