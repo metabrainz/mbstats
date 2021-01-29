@@ -81,7 +81,7 @@ def bucket2time(bucket, bucket_duration):
 
 
 def msec2bucket(msec, bucket_duration):
-    return int(math.ceil(msec / bucket_duration))
+    return int(math.ceil(float(msec) / float(bucket_duration)))
 
 
 def read_config(conf_path):
