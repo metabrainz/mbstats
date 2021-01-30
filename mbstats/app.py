@@ -465,23 +465,29 @@ def mbspostprocess(mbs):
 
     if mbs['upstreams_hits']:
         for k, v in list(mbs['_upstreams_response_time_premean'].items()):
-            mbs['upstreams_response_time_mean'][k] = v / \
-                mbs['_upstreams_response_time_count_premean'][k]
+            count = mbs['_upstreams_response_time_count_premean'][k]
+            if count:
+                mbs['upstreams_response_time_mean'][k] = v / count
 
         for k, v in list(mbs['_upstreams_connect_time_premean'].items()):
-            mbs['upstreams_connect_time_mean'][k] = v / \
-                mbs['_upstreams_connect_time_count_premean'][k]
+            count = mbs['_upstreams_connect_time_count_premean'][k]
+            if count:
+                mbs['upstreams_connect_time_mean'][k] = v / count
 
         for k, v in list(mbs['_upstreams_header_time_premean'].items()):
-            mbs['upstreams_header_time_mean'][k] = v / mbs['_upstreams_header_time_count_premean'][k]
+            count = mbs['_upstreams_header_time_count_premean'][k]
+            if count:
+                mbs['upstreams_header_time_mean'][k] = v / count
 
         for k, v in list(mbs['_upstreams_servers_contacted'].items()):
-            mbs['upstreams_servers_contacted_per_hit'][k] = float(
-                v) / mbs['hits_with_upstream'][k]
+            count = mbs['hits_with_upstream'][k]
+            if count:
+                mbs['upstreams_servers_contacted_per_hit'][k] = float(v) / count
 
         for k, v in list(mbs['_upstreams_internal_redirects'].items()):
-            mbs['upstreams_internal_redirects_per_hit'][k] = float(
-                v) / mbs['hits_with_upstream'][k]
+            count = mbs['hits_with_upstream'][k]
+            if count:
+                mbs['upstreams_internal_redirects_per_hit'][k] = float(v) / count
 
 
 def init_logger(options):
