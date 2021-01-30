@@ -58,7 +58,6 @@ import math
 import os.path
 import sys
 from time import time
-import traceback
 
 from mbstats.backends import BackendDryRun
 from mbstats.backends.influxdb import InfluxBackend
@@ -73,7 +72,6 @@ from mbstats.locker import (
 from mbstats.safefile import SafeFile
 from mbstats.utils import (
     bucket2time,
-    lineno,
     load_obj,
     msec2bucket,
     save_obj,
@@ -591,8 +589,7 @@ def main():
         try:
             lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
         except LockingError as e:
-            msg = "Locking error: %s" % e
-            logger.warning(msg)
+            logger.warning("Locking error: %s" % e)
             sys.exit(1)
 
         backend = InfluxBackend(options, logger=logger)
@@ -651,9 +648,7 @@ def main():
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
                 except Exception as e:
-                    msg = "Send failed again: %s: %s" % (lineno(), e)
-                    traceback.print_exc()
-                    logger.error(msg)
+                    logger.error(e, exc_info=True)
 
             if backend.points:
                 try:
@@ -664,9 +659,7 @@ def main():
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
                 except Exception as e:
-                    msg = "Send: Exception caught at %s: %s" % (lineno(), e)
-                    traceback.print_exc()
-                    logger.error(msg)
+                    logger.error(e, exc_info=True)
                     status['saved_points'].append(backend.points)
                     logger.info("Failed to send, saving points for later %d/%d" %
                                 (len(status['saved_points']),
@@ -675,15 +668,12 @@ def main():
         save_obj(status, files['status'].tmp, logger=logger)
     except KeyboardInterrupt:
         if options.quiet < 2:
-            msg = "Exiting on keyboard interrupt"
-            logger.info(msg)
+            logger.info("Exiting on keyboard interrupt")
         retcode = 1
     except SystemExit as e:
         retcode = e.code
     except Exception as e:
-        msg = "Exception caught at %s: %s" % (lineno(), e)
-        traceback.print_exc()
-        logger.error(msg)
+        logger.error(e, exc_info=True)
         retcode = 1
     else:
         files['offset'].rename_tmp_to_main()
