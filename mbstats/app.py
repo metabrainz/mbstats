@@ -572,6 +572,8 @@ def main():
 
     parsed_lines = 0
     skipped_lines = 0
+    files = None
+    lock = None
     try:
         workdir = os.path.abspath(options.workdir)
         files = {
@@ -688,12 +690,14 @@ def main():
         files['status'].rename_tmp_to_main()
         retcode = 0
     finally:
-        files['offset'].remove_tmp()
-        files['status'].remove_tmp()
-        try:
-            lock.unlock()
-        except LockingError:
-            pass
+        if files:
+            files['offset'].remove_tmp()
+            files['status'].remove_tmp()
+        if lock:
+            try:
+                lock.unlock()
+            except LockingError:
+                pass
 
     if options.quiet < 2:
         # Log the execution time
