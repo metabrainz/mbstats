@@ -494,7 +494,7 @@ class TestParser(unittest.TestCase):
 
         buckets = list(storage)
         self.assertEqual(buckets, [313792513, 313792514, 313792515, 313792516, 313792517, 313792518, 313792519,
-            313792520])
+                                   313792520])
         self.assertEqual(list(map(len, storage.values())), [1, 3, 2, 3, 3, 3, 3, 1])
         self.assertEqual(list(map(lambda v: bucket2time(v, bucket_duration), storage)), ['2019-09-20T06:56:05Z', '2019-09-20T06:56:10Z', '2019-09-20T06:56:15Z', '2019-09-20T06:56:20Z', '2019-09-20T06:56:25Z', '2019-09-20T06:56:30Z', '2019-09-20T06:56:35Z', '2019-09-20T06:56:40Z'])
 
@@ -516,7 +516,7 @@ class TestParser(unittest.TestCase):
         process_bucket(current, storage, status, mbs)
         self.assertEqual(len(storage[current]), 0)
         self.assertIn(key, mbs['bytes_sent'])
-        self.assertEqual(mbs['bytes_sent'][key], 2799*3)
+        self.assertEqual(mbs['bytes_sent'][key], 2799 * 3)
 
         upstream_key = (current, 'musicbrainz.org', 's', 'ws', '10.2.2.31:65412')
         # NOTE: for this bucket, we actually made a variation for upstream header time (si if i == 3 above)
@@ -533,7 +533,7 @@ class TestParser(unittest.TestCase):
         self.assertEqual(len(storage[current]), 0)
         self.assertIn(key, mbs['bytes_sent'])
         # NOTE: one was skipped due to forced parse error (see if i == 6 above)
-        self.assertEqual(mbs['bytes_sent'][key], 2799*2)
+        self.assertEqual(mbs['bytes_sent'][key], 2799 * 2)
 
         upstream_key = (current, 'musicbrainz.org', 's', 'ws', '10.2.2.31:65412')
         # NOTE: float imprecision can lead to a result not exactly equal to expected value
@@ -548,7 +548,7 @@ class TestParser(unittest.TestCase):
         process_bucket(current, storage, status, mbs)
         self.assertEqual(len(storage[current]), 0)
         self.assertIn(key, mbs['bytes_sent'])
-        self.assertEqual(mbs['bytes_sent'][key], 2799*3)
+        self.assertEqual(mbs['bytes_sent'][key], 2799 * 3)
 
         upstream_key = (current, 'musicbrainz.org', 's', 'ws', '10.2.2.31:65412')
         # NOTE: float imprecision can lead to a result not exactly equal to expected value
@@ -571,7 +571,6 @@ class TestParser(unittest.TestCase):
         # 20 lines, one was skipped due to forced parse error, we expect 19 total
         self.assertEqual(count_200, 9)
         self.assertEqual(count_302, 10)
-
 
 
 if __name__ == '__main__':
