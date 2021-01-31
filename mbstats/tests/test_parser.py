@@ -236,6 +236,54 @@ class TestParser(unittest.TestCase):
         self.assertEqual(last_msec, 1568962563.374)
         self.assertEqual(bucket, 1568962564)
 
+    def test_parseline_2(self):
+        line = ("1|1612013386.275|coverartarchive.org|s|-|502|664|-|49|0.019|10.2.2.23:62080, 10.2.2.37:62080, 10.2.2.40:62080,"
+                " caa-redirect|502, 502, 502, 502|0.000, 0.000, 0.000, 0.000|0.000, 0.000, 0.000, -|-, -, -, -")
+        row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
+        expected = {
+            'connect_time': {
+                '10.2.2.23:62080': 0.0,
+                '10.2.2.37:62080': 0.0,
+                '10.2.2.40:62080': 0.0
+            },
+            'connect_time_count': {
+                '10.2.2.23:62080': 1,
+                '10.2.2.37:62080': 1,
+                '10.2.2.40:62080': 1
+            },
+            'header_time': {},
+            'header_time_count': {},
+            'internal_redirects': 0,
+            'response_time': {
+                '10.2.2.23:62080': 0.0,
+                '10.2.2.37:62080': 0.0,
+                '10.2.2.40:62080': 0.0,
+                'caa-redirect': 0.0
+            },
+            'response_time_count': {
+                '10.2.2.23:62080': 1,
+                '10.2.2.37:62080': 1,
+                '10.2.2.40:62080': 1,
+                'caa-redirect': 1
+            },
+            'servers': [
+                '10.2.2.23:62080',
+                '10.2.2.37:62080',
+                '10.2.2.40:62080',
+                'caa-redirect'
+            ],
+            'servers_contacted': 4,
+            'status': {
+                '10.2.2.23:62080': {'502': 1},
+                '10.2.2.37:62080': {'502': 1},
+                '10.2.2.40:62080': {'502': 1},
+                'caa-redirect': {'502': 1}
+            }
+        }
+
+        self.assertEqual(row['upstreams'], expected)
+        self.assertEqual(last_msec, 1612013386.275)
+
     def test_parseline_version_invalid(self):
         line = self.get_sample_line(PosField.version)
         with self.assertRaisesRegex(ParseSkip, "^invalid log version: xxx$"):
@@ -427,6 +475,13 @@ class TestParser(unittest.TestCase):
                 line = self.get_sample_line(PosField.upstream_header_time, replace_with='-', line=line)
             elif i == 6:
                 line = self.get_sample_line(PosField.upstream_header_time, replace_with='x', line=line)
+            elif i >= 11 and i <= 13:
+                # empty upstream header time, that could lead to division by zero
+                line = self.get_sample_line(PosField.upstream_addr, replace_with='10.2.2.31:65412, 10.2.2.32:65412', line=line)
+                line = self.get_sample_line(PosField.upstream_status, replace_with='500, 500', line=line)
+                line = self.get_sample_line(PosField.upstream_response_time, replace_with='0.000, 0.000', line=line)
+                line = self.get_sample_line(PosField.upstream_connect_time, replace_with='0.000, 0.000', line=line)
+                line = self.get_sample_line(PosField.upstream_header_time, replace_with='-, -', line=line)
             if i % 2:
                 line = self.get_sample_line(PosField.status, replace_with='302', line=line)
             try:
