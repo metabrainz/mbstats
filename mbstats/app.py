@@ -43,6 +43,7 @@
 #
 
 
+import atexit
 from collections import (
     defaultdict,
     deque,
@@ -56,6 +57,7 @@ import logging.config
 import logging.handlers
 import math
 import os.path
+import signal
 import sys
 import time
 
@@ -605,8 +607,17 @@ def main_loop(options, logger, start_time=None):
 
         # Check for lock file so we don't run multiple copies of the same parser
         # simultaneuosly.
+        def unlock(lock):
+            logger.debug("unlock called")
+            if lock:
+                try:
+                    lock.unlock()
+                except LockingError:
+                    pass
+
         try:
             lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
+            atexit.register(unlock, lock)
         except LockingError as e:
             raise MBStatsLockFileError("Locking error: %s" % e)
 
@@ -693,11 +704,8 @@ def main_loop(options, logger, start_time=None):
         if files:
             files['offset'].remove_tmp()
             files['status'].remove_tmp()
-        if lock:
-            try:
-                lock.unlock()
-            except LockingError:
-                pass
+        unlock(lock)
+        atexit.unregister(unlock)
 
     if options.quiet < 2:
         # Log the execution time
@@ -711,6 +719,30 @@ def main_loop(options, logger, start_time=None):
 
 
 def main():
+
+    class MBStatsSignalCatched(MBStatsException):
+        pass
+
+    ignored_signals = {
+        signal.SIGHUP,
+        signal.SIGUSR1,
+        signal.SIGUSR2,
+    }
+
+    def signal_handler(signum, frame):
+        if signum not in ignored_signals:
+            signame = signal.Signals(signum).name
+            raise MBStatsSignalCatched("Got signal: %s" % signame)
+
+    uncatchable_signals = {
+        signal.SIGKILL,
+        signal.SIGSTOP,
+    }
+
+    catchable_signals = set(signal.Signals) - uncatchable_signals
+    for s in catchable_signals:
+        signal.signal(s, signal_handler)
+
     try:
         options = parse_options()
     except ParseOptionsSysExit as e:
@@ -718,10 +750,13 @@ def main():
 
     logger = init_logger(options)
     try:
+        retcode = 1
         while True:
             start = time.time()
             try:
                 main_loop(options, logger, start_time=start)
+            except (MBStatsSignalCatched, KeyboardInterrupt):
+                raise
             except MBStatsException as e:
                 logger.error(e, exc_info=True)
             if options.loop_delay > 0.0:
@@ -738,12 +773,10 @@ def main():
     except KeyboardInterrupt:
         if options.quiet < 2:
             logger.info("Exiting on keyboard interrupt")
-        retcode = 1
-    except SystemExit as e:
-        retcode = e.code
+    except MBStatsSignalCatched as e:
+        logger.info(e)
     except Exception as e:
         logger.error(e, exc_info=True)
-        retcode = 1
 
     sys.exit(retcode)
 
