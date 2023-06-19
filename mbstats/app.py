@@ -258,7 +258,7 @@ def get_storage():
     return defaultdict(deque)
 
 
-def parsefile(tailer, status, options, logger=None):
+def parsefile(tailer, status, options, logger=None, first_loop=False):
     parsed_lines = 0
     skipped_lines = 0
     first_run = False
@@ -289,7 +289,7 @@ def parsefile(tailer, status, options, logger=None):
         storage = get_storage()
         if logger:
             logger.info("First run")
-        first_run = not options.do_not_skip_to_end
+        first_run = first_loop and not options.do_not_skip_to_end
     bucket = 0
     if first_run:
         # code duplication here, intentional
@@ -591,7 +591,7 @@ class MBStatsSignalCatched(MBStatsException):
     """Raised when a signal is catched, usually leads to exit"""
 
 
-def main_loop(options, logger, start_time=None):
+def main_loop(options, logger, start_time=None, first_loop=False):
     if start_time is None:
         start_time = time.time()
 
@@ -627,7 +627,7 @@ def main_loop(options, logger, start_time=None):
 
         backend = InfluxBackend(options, logger=logger)
 
-        if options.startover:
+        if first_loop and options.startover:
             files['offset'].remove_main()
             files['status'].remove_main()
 
@@ -653,7 +653,7 @@ def main_loop(options, logger, start_time=None):
                         files['status'].main)
                 raise MBStatsStatusFileError(msg)
 
-        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger)
+        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger, first_loop=first_loop)
         status['leftover'] = leftover
         status['last_msec'] = last_msec
 
@@ -674,28 +674,34 @@ def main_loop(options, logger, start_time=None):
                     logger.info("Trying to send %d saved points" %
                                 len(to_resend))
                     if options.simulate_send_failure:
-                        raise MBStatsSimulateSendFailure('Simulating send failure (resend)')
-                    if backend.send_points(tags, points=to_resend):
-                        status['saved_points'].clear()
+                        raise MBStatsSendPointsFailed('Simulating send failure (resend)')
+                    if not backend.send_points(tags, points=to_resend):
+                        raise MBStatsSendPointsFailed('influx_send failed')
+                    status['saved_points'].clear()
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
+                except MBStatsSendPointsFailed as e:
+                    logger.warning(e)
                 except Exception as e:
                     logger.error(e, exc_info=True)
 
             if backend.points:
                 try:
                     if options.simulate_send_failure:
-                        raise MBStatsSimulateSendFailure('Simulating send failure')
+                        raise MBStatsSendPointsFailed('Simulating send failure')
                     if not backend.send_points(tags):
                         raise MBStatsSendPointsFailed('influx_send failed')
+                    backend.points = None
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
-                except Exception as e:
-                    logger.error(e, exc_info=True)
+                except MBStatsSendPointsFailed as e:
+                    logger.warning(e)
                     status['saved_points'].append(backend.points)
                     logger.info("Failed to send, saving points for later %d/%d" %
                                 (len(status['saved_points']),
                                  options.send_failure_fifo_size))
+                except Exception as e:
+                    logger.error(e, exc_info=True)
 
         save_obj(status, files['status'].tmp, logger=logger)
     except Exception:
@@ -755,10 +761,12 @@ def main():
     logger = init_logger(options)
     try:
         retcode = 1
+        first_loop = True
         while True:
             start = time.time()
             try:
-                main_loop(options, logger, start_time=start)
+                main_loop(options, logger, start_time=start, first_loop=first_loop)
+                first_loop = False
             except (MBStatsSignalCatched, KeyboardInterrupt):
                 raise
             except MBStatsStatusFileError as e:
