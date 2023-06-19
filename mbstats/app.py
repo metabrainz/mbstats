@@ -606,8 +606,7 @@ def main_loop(options, logger, start_time=None):
         }
 
         # Check for lock file so we don't run multiple copies of the same parser
-        # simultaneuosly. This will happen if the log parsing takes more time than
-        # the cron period.
+        # simultaneuosly.
         try:
             lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
         except LockingError as e:
