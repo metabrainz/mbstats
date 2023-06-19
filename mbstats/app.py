@@ -57,7 +57,7 @@ import logging.handlers
 import math
 import os.path
 import sys
-from time import time
+import time
 
 from mbstats.backends import BackendDryRun
 from mbstats.backends.influxdb import InfluxBackend
@@ -565,14 +565,30 @@ def init_status(files, options, logger):
     return status
 
 
-def main():
-    script_start_time = time()
-    try:
-        options = parse_options()
-    except ParseOptionsSysExit as e:
-        sys.exit(e.code)
+class MBStatsException(Exception):
+    pass
 
-    logger = init_logger(options)
+class MBStatsStatusFileError(MBStatsException):
+    pass
+
+
+class MBStatsLockFileError(MBStatsException):
+    pass
+
+
+class MBStatsSimulateSendFailure(MBStatsException):
+    pass
+
+
+class MBStatsSendPointsFailed(MBStatsException):
+    pass
+
+
+def main_loop(options, logger, start_time=None):
+    if start_time is None:
+        script_start_time = time.time()
+    else:
+        script_start_time = start_time
 
     parsed_lines = 0
     skipped_lines = 0
@@ -595,8 +611,7 @@ def main():
         try:
             lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
         except LockingError as e:
-            logger.warning("Locking error: %s" % e)
-            sys.exit(1)
+            raise MBStatsLockFileError("Locking error: %s" % e)
 
         backend = InfluxBackend(options, logger=logger)
 
@@ -624,8 +639,7 @@ def main():
             if exit:
                 msg += (" If you know what you are doing, remove status file %s" %
                         files['status'].main)
-                logger.error(msg)
-                sys.exit(1)
+                raise MBStatsStatusFileError(msg)
 
         mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger)
         status['leftover'] = leftover
@@ -648,7 +662,7 @@ def main():
                     logger.info("Trying to send %d saved points" %
                                 len(to_resend))
                     if options.simulate_send_failure:
-                        raise Exception('Simulating send failure (resend)')
+                        raise MBStatsSimulateSendFailure('Simulating send failure (resend)')
                     if backend.send_points(tags, points=to_resend):
                         status['saved_points'].clear()
                 except BackendDryRun as e:
@@ -659,9 +673,9 @@ def main():
             if backend.points:
                 try:
                     if options.simulate_send_failure:
-                        raise Exception('Simulating send failure')
+                        raise MBStatsSimulateSendFailure('Simulating send failure')
                     if not backend.send_points(tags):
-                        raise Exception('influx_send failed')
+                        raise MBStatsSendPointsFailed('influx_send failed')
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
                 except Exception as e:
@@ -672,15 +686,8 @@ def main():
                                  options.send_failure_fifo_size))
 
         save_obj(status, files['status'].tmp, logger=logger)
-    except KeyboardInterrupt:
-        if options.quiet < 2:
-            logger.info("Exiting on keyboard interrupt")
-        retcode = 1
-    except SystemExit as e:
-        retcode = e.code
-    except Exception as e:
-        logger.error(e, exc_info=True)
-        retcode = 1
+    except Exception:
+        raise
     else:
         files['offset'].rename_tmp_to_main()
         files['status'].rename_tmp_to_main()
@@ -697,13 +704,46 @@ def main():
 
     if options.quiet < 2:
         # Log the execution time
-        exec_time = round(time() - script_start_time, 1)
+        exec_time = round(time.time() - script_start_time, 1)
         if parsed_lines:
             mean_per_line = 1000000.0 * (exec_time / parsed_lines)
         else:
             mean_per_line = 0.0
         logger.info("duration=%ss parsed=%d skipped=%d mean_per_line=%0.3fµs" %
                     (exec_time, parsed_lines, skipped_lines, mean_per_line))
+
+
+def main():
+    try:
+        options = parse_options()
+    except ParseOptionsSysExit as e:
+        sys.exit(e.code)
+
+    logger = init_logger(options)
+    try:
+        while True:
+            start = time.time()
+            main_loop(options, logger, start_time=start)
+            if options.loop_delay > 0.0:
+                end = time.time()
+                delay = start + options.loop_delay - end
+                if delay > 0.0:
+                    logger.debug("Sleep for %0.3f seconds" % delay)
+                    time.sleep(delay)
+                else:
+                    logger.warning("Loop delay might be too short (%0.3f seconds, offset=%0.3f seconds)" % (options.loop_delay, delay))
+            else:
+                break
+        retcode = 0
+    except KeyboardInterrupt:
+        if options.quiet < 2:
+            logger.info("Exiting on keyboard interrupt")
+        retcode = 1
+    except SystemExit as e:
+        retcode = e.code
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        retcode = 1
 
     sys.exit(retcode)
 

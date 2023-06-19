@@ -130,6 +130,7 @@ def parse_options():
         'simulate_send_failure': False,
         'startover': False,
         'log_handler': 'file',
+        'loop_delay': -1.0,
     }
     conf_parser = argparse.ArgumentParser(add_help=False)
     conf_parser.add_argument("-c", "--config", help="Specify json config file(s)",
@@ -169,6 +170,9 @@ def parse_options():
                         help='Parse the log file but send stats to standard output')
     common.add_argument('-q', '--quiet', action='count',
                         help='Reduce verbosity / quiet mode')
+    common.add_argument('-L', '--loop-delay', type=float,
+                        help='Delay between each run in seconds. If set to 0 or less, run only once.')
+
 
     influx = parser.add_argument_group('influxdb arguments')
     influx.add_argument('--influx-host',
