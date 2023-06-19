@@ -720,7 +720,10 @@ def main():
     try:
         while True:
             start = time.time()
-            main_loop(options, logger, start_time=start)
+            try:
+                main_loop(options, logger, start_time=start)
+            except MBStatsException as e:
+                logger.error(e, exc_info=True)
             if options.loop_delay > 0.0:
                 end = time.time()
                 delay = start + options.loop_delay - end
