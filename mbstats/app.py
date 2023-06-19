@@ -586,9 +586,7 @@ class MBStatsSendPointsFailed(MBStatsException):
 
 def main_loop(options, logger, start_time=None):
     if start_time is None:
-        script_start_time = time.time()
-    else:
-        script_start_time = start_time
+        start_time = time.time()
 
     parsed_lines = 0
     skipped_lines = 0
@@ -703,7 +701,7 @@ def main_loop(options, logger, start_time=None):
 
     if options.quiet < 2:
         # Log the execution time
-        exec_time = round(time.time() - script_start_time, 1)
+        exec_time = round(time.time() - start_time, 1)
         if parsed_lines:
             mean_per_line = 1000000.0 * (exec_time / parsed_lines)
         else:
