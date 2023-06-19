@@ -623,17 +623,17 @@ def main_loop(options, logger, start_time=None):
         status = init_status(files, options, logger)
 
         if status['leftover'] is not None and len(status['leftover']) > 0:
-            exit = False
+            fatal = False
             msg = 'Error:'
             if status['bucket_duration'] != options.bucket_duration:
                 msg += (" Bucket duration mismatch %d vs %d (set via option)" %
                         (status['bucket_duration'], options.bucket_duration))
-                exit = True
+                fatal = True
             if status['lookback_factor'] != options.lookback_factor:
                 msg += (" Lookback factor mismatch %d vs %d (set via option)" %
                         (status['lookback_factor'], options.lookback_factor))
-                exit = True
-            if exit:
+                fatal = True
+            if fatal:
                 msg += (" If you know what you are doing, remove status file %s" %
                         files['status'].main)
                 raise MBStatsStatusFileError(msg)
