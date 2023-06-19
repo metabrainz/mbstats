@@ -568,22 +568,27 @@ def init_status(files, options, logger):
 
 
 class MBStatsException(Exception):
-    pass
+    """Generic MBStats exception"""
+
 
 class MBStatsStatusFileError(MBStatsException):
-    pass
+    """Raised when a problem arises with status file, usually fatal"""
 
 
 class MBStatsLockFileError(MBStatsException):
-    pass
+    """Raised when failing to create lock file, retry is possible"""
 
 
 class MBStatsSimulateSendFailure(MBStatsException):
-    pass
+    """Raised when --simulate-send-failure option is used"""
 
 
 class MBStatsSendPointsFailed(MBStatsException):
-    pass
+    """Raised when sending points failed, retry is possible"""
+
+
+class MBStatsSignalCatched(MBStatsException):
+    """Raised when a signal is catched, usually leads to exit"""
 
 
 def main_loop(options, logger, start_time=None):
@@ -605,8 +610,6 @@ def main_loop(options, logger, start_time=None):
                              logger=logger),
         }
 
-        # Check for lock file so we don't run multiple copies of the same parser
-        # simultaneuosly.
         def unlock(lock):
             logger.debug("unlock called")
             if lock:
@@ -616,6 +619,7 @@ def main_loop(options, logger, start_time=None):
                     pass
 
         try:
+            # Used to avoid running same parser more than once
             lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
             atexit.register(unlock, lock)
         except LockingError as e:
