@@ -757,6 +757,9 @@ def main():
                 main_loop(options, logger, start_time=start)
             except (MBStatsSignalCatched, KeyboardInterrupt):
                 raise
+            except MBStatsStatusFileError as e:
+                logger.error(e)
+                raise SystemExit(1)
             except MBStatsException as e:
                 logger.error(e, exc_info=True)
             if options.loop_delay > 0.0:
@@ -775,6 +778,8 @@ def main():
             logger.info("Exiting on keyboard interrupt")
     except MBStatsSignalCatched as e:
         logger.info(e)
+    except SystemExit as e:
+        retcode = e.code
     except Exception as e:
         logger.error(e, exc_info=True)
 
