@@ -349,7 +349,8 @@ def parsefile(tailer, status, options, logger=None, first_loop=False):
         if skipped_lines and logger and options.quiet < 2:
             logger.info("Skipped %d unordered lines" % skipped_lines)
 
-    tailer._update_offset_file()
+
+    tailer.update_offset_file()
     last_bucket = bucket
     leftover = get_storage()
     for bucket in storage:

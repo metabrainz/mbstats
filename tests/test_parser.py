@@ -315,7 +315,7 @@ class TestParser(unittest.TestCase):
 
     def test_parseline_status_invalid(self):
         line = self.get_sample_line(PosField.status, replace_with='xxx')
-        with self.assertRaisesRegex(ParseSkip, "^invalid literal for int\(\) with base 10: 'xxx'$"):
+        with self.assertRaisesRegex(ParseSkip, r"^invalid literal for int\(\) with base 10: 'xxx'$"):
             row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
     def test_parseline_status_valid(self):
@@ -325,7 +325,7 @@ class TestParser(unittest.TestCase):
 
     def test_parseline_bytes_sent_invalid(self):
         line = self.get_sample_line(PosField.bytes_sent, replace_with='xxx')
-        with self.assertRaisesRegex(ParseSkip, "^invalid literal for int\(\) with base 10: 'xxx'$"):
+        with self.assertRaisesRegex(ParseSkip, r"^invalid literal for int\(\) with base 10: 'xxx'$"):
             row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
     def test_parseline_bytes_sent_valid(self):
@@ -345,7 +345,7 @@ class TestParser(unittest.TestCase):
 
     def test_parseline_request_length_invalid(self):
         line = self.get_sample_line(PosField.request_length, replace_with='xxx')
-        with self.assertRaisesRegex(ParseSkip, "^invalid literal for int\(\) with base 10: 'xxx'$"):
+        with self.assertRaisesRegex(ParseSkip, r"^invalid literal for int\(\) with base 10: 'xxx'$"):
             row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
     def test_parseline_request_length_valid(self):
@@ -365,7 +365,7 @@ class TestParser(unittest.TestCase):
 
     def test_parseline_upstream_status_invalid(self):
         line = self.get_sample_line(PosField.upstream_status, replace_with='xxx')
-        with self.assertRaisesRegex(ParseSkip, "^invalid literal for int\(\) with base 10: 'xxx'$"):
+        with self.assertRaisesRegex(ParseSkip, r"^invalid literal for int\(\) with base 10: 'xxx'$"):
             row, last_msec, bucket = parseline(line, ignore_before=0, bucket_duration=1, last_msec=0)
 
     def test_parseline_upstream_status_valid(self):
