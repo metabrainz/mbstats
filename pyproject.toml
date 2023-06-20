@@ -6,6 +6,9 @@ authors = ["Laurent Monin"]
 license = "GPLv3"
 readme = "README.md"
 
+[tool.poetry.scripts]
+mbstats = "mbstats.app:main"
+
 [tool.poetry.dependencies]
 python = ">=3.8.1"
 influxdb = "^5.3.1"
