@@ -163,7 +163,7 @@ def parse_options():
     common.add_argument('-n', '--name',
                         help="string to use as 'name' tag")
     common.add_argument('-m', '--max-lines', type=int,
-                        help="maximum number of lines to process")
+                        help="maximum number of lines to process per loop")
     common.add_argument('-w', '--workdir',
                         help="directory where offset/status are stored")
     common.add_argument('-y', '--dry-run', action='store_true',
