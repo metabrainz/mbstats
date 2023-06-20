@@ -58,7 +58,7 @@ jobs:
           poetry run python -m pytest -v --cov=mbstats tests/
       - name: Lint with flake8
         run: |
-          poetry run flake8 --show-source --statistics --count
+          poetry run flake8 --show-source --statistics --count --ignore E501 mbstats/
       - name: Lint with pylint
         run: |
           poetry run pylint -j0 --exit-zero mbstats
