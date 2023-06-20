@@ -1,29 +1,28 @@
-#!/usr/bin/python3 -tt
 # -*- coding: utf-8 -*-
 
 #
-# stats.parser.py
+# mbstats
 #
 # Tails a log and applies mbstats parser, then reports metrics to InfluxDB
 #
 # Usage:
 #
-# $ stats.parser.py [options]
+# $ mbstats [options]
 #
 # Help:
 #
-# $ stats.parser.py -h
+# $ mbstats -h
 #
 #
-# Copyright 2016-2019, MetaBrainz Foundation
+# Copyright 2016-2023, MetaBrainz Foundation
 # Author: Laurent Monin
 #
-# stats.parser.py is free software: you can redistribute it and/or modify
+# mbstats is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# stats.parser.py is distributed in the hope that it will be useful,
+# mbstats is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
@@ -43,6 +42,7 @@
 #
 
 
+import atexit
 from collections import (
     defaultdict,
     deque,
@@ -56,8 +56,9 @@ import logging.config
 import logging.handlers
 import math
 import os.path
+import signal
 import sys
-from time import time
+import time
 
 from mbstats.backends import BackendDryRun
 from mbstats.backends.influxdb import InfluxBackend
@@ -256,7 +257,7 @@ def get_storage():
     return defaultdict(deque)
 
 
-def parsefile(tailer, status, options, logger=None):
+def parsefile(tailer, status, options, logger=None, first_loop=False):
     parsed_lines = 0
     skipped_lines = 0
     first_run = False
@@ -287,7 +288,7 @@ def parsefile(tailer, status, options, logger=None):
         storage = get_storage()
         if logger:
             logger.info("First run")
-        first_run = not options.do_not_skip_to_end
+        first_run = first_loop and not options.do_not_skip_to_end
     bucket = 0
     if first_run:
         # code duplication here, intentional
@@ -347,7 +348,7 @@ def parsefile(tailer, status, options, logger=None):
         if skipped_lines and logger and options.quiet < 2:
             logger.info("Skipped %d unordered lines" % skipped_lines)
 
-    tailer._update_offset_file()
+    tailer.update_offset_file()
     last_bucket = bucket
     leftover = get_storage()
     for bucket in storage:
@@ -565,14 +566,33 @@ def init_status(files, options, logger):
     return status
 
 
-def main():
-    script_start_time = time()
-    try:
-        options = parse_options()
-    except ParseOptionsSysExit as e:
-        sys.exit(e.code)
+class MBStatsException(Exception):
+    """Generic MBStats exception"""
 
-    logger = init_logger(options)
+
+class MBStatsStatusFileError(MBStatsException):
+    """Raised when a problem arises with status file, usually fatal"""
+
+
+class MBStatsLockFileError(MBStatsException):
+    """Raised when failing to create lock file, retry is possible"""
+
+
+class MBStatsSimulateSendFailure(MBStatsException):
+    """Raised when --simulate-send-failure option is used"""
+
+
+class MBStatsSendPointsFailed(MBStatsException):
+    """Raised when sending points failed, retry is possible"""
+
+
+class MBStatsSignalCatched(MBStatsException):
+    """Raised when a signal is catched, usually leads to exit"""
+
+
+def main_loop(options, logger, start_time=None, first_loop=False):
+    if start_time is None:
+        start_time = time.time()
 
     parsed_lines = 0
     skipped_lines = 0
@@ -589,18 +609,24 @@ def main():
                              logger=logger),
         }
 
-        # Check for lock file so we don't run multiple copies of the same parser
-        # simultaneuosly. This will happen if the log parsing takes more time than
-        # the cron period.
+        def unlock(lock):
+            logger.debug("unlock called")
+            if lock:
+                try:
+                    lock.unlock()
+                except LockingError:
+                    pass
+
         try:
+            # Used to avoid running same parser more than once
             lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
+            atexit.register(unlock, lock)
         except LockingError as e:
-            logger.warning("Locking error: %s" % e)
-            sys.exit(1)
+            raise MBStatsLockFileError("Locking error: %s" % e)
 
         backend = InfluxBackend(options, logger=logger)
 
-        if options.startover:
+        if first_loop and options.startover:
             files['offset'].remove_main()
             files['status'].remove_main()
 
@@ -611,23 +637,24 @@ def main():
         status = init_status(files, options, logger)
 
         if status['leftover'] is not None and len(status['leftover']) > 0:
-            exit = False
+            fatal = False
             msg = 'Error:'
             if status['bucket_duration'] != options.bucket_duration:
                 msg += (" Bucket duration mismatch %d vs %d (set via option)" %
                         (status['bucket_duration'], options.bucket_duration))
-                exit = True
+                fatal = True
             if status['lookback_factor'] != options.lookback_factor:
                 msg += (" Lookback factor mismatch %d vs %d (set via option)" %
                         (status['lookback_factor'], options.lookback_factor))
-                exit = True
-            if exit:
+                fatal = True
+            if fatal:
                 msg += (" If you know what you are doing, remove status file %s" %
                         files['status'].main)
-                logger.error(msg)
-                sys.exit(1)
+                raise MBStatsStatusFileError(msg)
 
-        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger)
+        parse_start_time = time.time()
+        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger, first_loop=first_loop)
+        parse_end_time = time.time()
         status['leftover'] = leftover
         status['last_msec'] = last_msec
 
@@ -648,62 +675,129 @@ def main():
                     logger.info("Trying to send %d saved points" %
                                 len(to_resend))
                     if options.simulate_send_failure:
-                        raise Exception('Simulating send failure (resend)')
-                    if backend.send_points(tags, points=to_resend):
-                        status['saved_points'].clear()
+                        raise MBStatsSendPointsFailed('Simulating send failure (resend)')
+                    if not backend.send_points(tags, points=to_resend):
+                        raise MBStatsSendPointsFailed('influx_send failed')
+                    status['saved_points'].clear()
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
+                except MBStatsSendPointsFailed as e:
+                    logger.warning(e)
                 except Exception as e:
                     logger.error(e, exc_info=True)
 
             if backend.points:
                 try:
                     if options.simulate_send_failure:
-                        raise Exception('Simulating send failure')
+                        raise MBStatsSendPointsFailed('Simulating send failure')
                     if not backend.send_points(tags):
-                        raise Exception('influx_send failed')
+                        raise MBStatsSendPointsFailed('influx_send failed')
+                    backend.points = None
                 except BackendDryRun as e:
                     logger.debug("Dry run: %s" % e)
-                except Exception as e:
-                    logger.error(e, exc_info=True)
+                except MBStatsSendPointsFailed as e:
+                    logger.warning(e)
                     status['saved_points'].append(backend.points)
                     logger.info("Failed to send, saving points for later %d/%d" %
                                 (len(status['saved_points']),
                                  options.send_failure_fifo_size))
+                except Exception as e:
+                    logger.error(e, exc_info=True)
 
         save_obj(status, files['status'].tmp, logger=logger)
-    except KeyboardInterrupt:
-        if options.quiet < 2:
-            logger.info("Exiting on keyboard interrupt")
-        retcode = 1
-    except SystemExit as e:
-        retcode = e.code
-    except Exception as e:
-        logger.error(e, exc_info=True)
-        retcode = 1
+    except Exception:
+        raise
     else:
         files['offset'].rename_tmp_to_main()
         files['status'].rename_tmp_to_main()
-        retcode = 0
     finally:
         if files:
             files['offset'].remove_tmp()
             files['status'].remove_tmp()
-        if lock:
-            try:
-                lock.unlock()
-            except LockingError:
-                pass
+        unlock(lock)
+        atexit.unregister(unlock)
 
     if options.quiet < 2:
         # Log the execution time
-        exec_time = round(time() - script_start_time, 1)
+        end_time = time.time()
+        exec_time = round(end_time - start_time, 1)
         if parsed_lines:
-            mean_per_line = 1000000.0 * (exec_time / parsed_lines)
+            parse_time = round(parse_end_time - parse_start_time, 1)
+            mean_per_line = 1000000.0 * (parse_time / parsed_lines)
         else:
+            parse_time = 0
             mean_per_line = 0.0
-        logger.info("duration=%ss parsed=%d skipped=%d mean_per_line=%0.3fµs" %
-                    (exec_time, parsed_lines, skipped_lines, mean_per_line))
+
+        logger.info("duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_per_line=%0.3fµs" %
+                    (exec_time, parsed_lines, parse_time, skipped_lines, mean_per_line))
+
+
+def main():
+
+    class MBStatsSignalCatched(MBStatsException):
+        pass
+
+    ignored_signals = {
+        signal.SIGHUP,
+        signal.SIGUSR1,
+        signal.SIGUSR2,
+    }
+
+    def signal_handler(signum, frame):
+        if signum not in ignored_signals:
+            signame = signal.Signals(signum).name
+            raise MBStatsSignalCatched("Got signal: %s" % signame)
+
+    uncatchable_signals = {
+        signal.SIGKILL,
+        signal.SIGSTOP,
+    }
+
+    catchable_signals = set(signal.Signals) - uncatchable_signals
+    for s in catchable_signals:
+        signal.signal(s, signal_handler)
+
+    try:
+        options = parse_options()
+    except ParseOptionsSysExit as e:
+        sys.exit(e.code)
+
+    logger = init_logger(options)
+    try:
+        retcode = 1
+        first_loop = True
+        while True:
+            start = time.time()
+            try:
+                main_loop(options, logger, start_time=start, first_loop=first_loop)
+                first_loop = False
+            except (MBStatsSignalCatched, KeyboardInterrupt):
+                raise
+            except MBStatsStatusFileError as e:
+                logger.error(e)
+                raise SystemExit(1)
+            except MBStatsException as e:
+                logger.error(e, exc_info=True)
+            if options.loop_delay > 0.0:
+                end = time.time()
+                delay = start + options.loop_delay - end
+                if delay > 0.0:
+                    logger.debug("Sleep for %0.3f seconds" % delay)
+                    time.sleep(delay)
+                else:
+                    logger.warning("Loop delay might be too short (%0.3f seconds, offset=%0.3f seconds)" % (options.loop_delay, delay))
+            else:
+                break
+        retcode = 0
+    except KeyboardInterrupt:
+        if options.quiet < 2:
+            logger.info("Exiting on keyboard interrupt")
+    except MBStatsSignalCatched as e:
+        logger.info(e)
+    except SystemExit as e:
+        retcode = e.code
+    except Exception as e:
+        logger.error(e, exc_info=True)
 
     sys.exit(retcode)
 

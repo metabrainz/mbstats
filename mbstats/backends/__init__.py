@@ -1,29 +1,28 @@
-#!/usr/bin/python3 -tt
 # -*- coding: utf-8 -*-
 
 #
-# stats.parser.py
+# mbstats
 #
 # Tails a log and applies mbstats parser, then reports metrics to InfluxDB
 #
 # Usage:
 #
-# $ stats.parser.py [options]
+# $ mbstats [options]
 #
 # Help:
 #
-# $ stats.parser.py -h
+# $ mbstats -h
 #
 #
-# Copyright 2016-2019, MetaBrainz Foundation
+# Copyright 2016-2023, MetaBrainz Foundation
 # Author: Laurent Monin
 #
-# stats.parser.py is free software: you can redistribute it and/or modify
+# mbstats is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# stats.parser.py is distributed in the hope that it will be useful,
+# mbstats is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.

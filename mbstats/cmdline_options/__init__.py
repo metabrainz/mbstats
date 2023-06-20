@@ -1,29 +1,28 @@
-#!/usr/bin/python3 -tt
 # -*- coding: utf-8 -*-
 
 #
-# stats.parser.py
+# mbstats
 #
 # Tails a log and applies mbstats parser, then reports metrics to InfluxDB
 #
 # Usage:
 #
-# $ stats.parser.py [options]
+# $ mbstats [options]
 #
 # Help:
 #
-# $ stats.parser.py -h
+# $ mbstats -h
 #
 #
-# Copyright 2016-2019, MetaBrainz Foundation
+# Copyright 2016-2023, MetaBrainz Foundation
 # Author: Laurent Monin
 #
-# stats.parser.py is free software: you can redistribute it and/or modify
+# mbstats is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# stats.parser.py is distributed in the hope that it will be useful,
+# mbstats is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
@@ -126,10 +125,11 @@ def parse_options():
         'influx_drop_database': False,
         'locker': 'fcntl',
         'lookback_factor': 2,
-        'send_failure_fifo_size': 30,
+        'send_failure_fifo_size': 30000,
         'simulate_send_failure': False,
         'startover': False,
         'log_handler': 'file',
+        'loop_delay': -1.0,
     }
     conf_parser = argparse.ArgumentParser(add_help=False)
     conf_parser.add_argument("-c", "--config", help="Specify json config file(s)",
@@ -162,13 +162,15 @@ def parse_options():
     common.add_argument('-n', '--name',
                         help="string to use as 'name' tag")
     common.add_argument('-m', '--max-lines', type=int,
-                        help="maximum number of lines to process")
+                        help="maximum number of lines to process per loop")
     common.add_argument('-w', '--workdir',
                         help="directory where offset/status are stored")
     common.add_argument('-y', '--dry-run', action='store_true',
                         help='Parse the log file but send stats to standard output')
     common.add_argument('-q', '--quiet', action='count',
                         help='Reduce verbosity / quiet mode')
+    common.add_argument('-L', '--loop-delay', type=float,
+                        help='Delay between each run in seconds. If set to 0 or less, run only once.')
 
     influx = parser.add_argument_group('influxdb arguments')
     influx.add_argument('--influx-host',

@@ -1,27 +1,21 @@
-[![CircleCI](https://circleci.com/gh/metabrainz/mbstats/tree/master.svg?style=svg)](https://circleci.com/gh/metabrainz/mbstats/tree/master)
+# Fast nginx (special) log parser
+
+This tool is meant to generate statistics about nginx traffic in near-realtime.
+For that, it reads a special access log file containing only needed data.
+It can run every minute (depending on configuration), and parses new lines added to the log file.
+It then pushes metrics to [InfluxDB](https://www.influxdata.com/).
 
 
 ```
-usage: __main__.py [-h] [-f FILE] [-c FILE] [-d DATACENTER] [-H HOSTNAME]
-                   [-l LOG_DIR] [-n NAME] [-m MAX_LINES] [-w WORKDIR] [-y]
-                   [-q] [--influx-host INFLUX_HOST]
-                   [--influx-port INFLUX_PORT]
-                   [--influx-username INFLUX_USERNAME]
-                   [--influx-password INFLUX_PASSWORD]
-                   [--influx-database INFLUX_DATABASE]
-                   [--influx-timeout INFLUX_TIMEOUT]
-                   [--influx-batch-size INFLUX_BATCH_SIZE] [-D]
-                   [--influx-drop-database] [--locker {fcntl,portalocker}]
-                   [--lookback-factor LOOKBACK_FACTOR] [--startover]
-                   [--do-not-skip-to-end] [--bucket-duration BUCKET_DURATION]
-                   [--log-conf LOG_CONF] [--dump-config]
-                   [--log-handler LOG_HANDLER]
-                   [--send-failure-fifo-size SEND_FAILURE_FIFO_SIZE]
-                   [--simulate-send-failure]
+usage: mbstats [-h] [-f FILE] [-c FILE] [-d DATACENTER] [-H HOSTNAME] [-l LOG_DIR] [-n NAME] [-m MAX_LINES] [-w WORKDIR] [-y] [-q] [-L LOOP_DELAY]
+               [--influx-host INFLUX_HOST] [--influx-port INFLUX_PORT] [--influx-username INFLUX_USERNAME] [--influx-password INFLUX_PASSWORD]
+               [--influx-database INFLUX_DATABASE] [--influx-timeout INFLUX_TIMEOUT] [--influx-batch-size INFLUX_BATCH_SIZE] [-D] [--influx-drop-database]
+               [--locker {fcntl,portalocker}] [--lookback-factor LOOKBACK_FACTOR] [--startover] [--do-not-skip-to-end] [--bucket-duration BUCKET_DURATION]
+               [--log-conf LOG_CONF] [--dump-config] [--log-handler LOG_HANDLER] [--send-failure-fifo-size SEND_FAILURE_FIFO_SIZE] [--simulate-send-failure]
 
 Tail and parse a formatted nginx log file, sending results to InfluxDB.
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
 
 required arguments:
@@ -35,8 +29,7 @@ common arguments:
   -H HOSTNAME, --hostname HOSTNAME
                         string to use as 'host' tag
   -l LOG_DIR, --log-dir LOG_DIR
-                        Where to store the stats.parser logfile. Default
-                        location is workdir
+                        Where to store the stats.parser logfile. Default location is workdir
   -n NAME, --name NAME  string to use as 'name' tag
   -m MAX_LINES, --max-lines MAX_LINES
                         maximum number of lines to process
@@ -44,6 +37,8 @@ common arguments:
                         directory where offset/status are stored
   -y, --dry-run         Parse the log file but send stats to standard output
   -q, --quiet           Reduce verbosity / quiet mode
+  -L LOOP_DELAY, --loop-delay LOOP_DELAY
+                        Delay between each run in seconds. If set to 0 or less, run only once.
 
 influxdb arguments:
   --influx-host INFLUX_HOST
@@ -121,50 +116,19 @@ expert arguments:
 
 ## Dev
 
-Creating virtual env:
 
-```
-python3 -m venv .venv
-```
+Install [poetry](https://python-poetry.org/)
 
-Activate virtual env:
+```bash
+poetry shell
 
-```
-source .venv/bin/activate
-```
+poetry install
 
-Install wheel:
-
-```
-pip install wheel
+mbstats --help
 ```
 
-Installing dev requirements:
+To run tests:
 
-```
-pip install -r requirements-dev.txt
-```
-
-Running source code checks (isort, pyflakes, pylint, ...):
-
-```
-make check
-```
-
-Running tests:
-
-```
-make test
-```
-
-or:
-
-```
-python setup.py test
-```
-
-Build docker image:
-
-```
-make dockerbuild
+```bash
+poetry run pytest
 ```
