@@ -58,3 +58,11 @@ jobs:
       - store_artifacts:
           path: test-reports
           destination: test-reports
+
+workflows:
+  testing:
+    jobs:
+    - build
+      filter:
+        branches:
+          only: master
