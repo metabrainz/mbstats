@@ -653,7 +653,9 @@ def main_loop(options, logger, start_time=None, first_loop=False):
                         files['status'].main)
                 raise MBStatsStatusFileError(msg)
 
+        parse_start_time = time.time()
         mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger, first_loop=first_loop)
+        parse_end_time = time.time()
         status['leftover'] = leftover
         status['last_msec'] = last_msec
 
@@ -718,13 +720,17 @@ def main_loop(options, logger, start_time=None, first_loop=False):
 
     if options.quiet < 2:
         # Log the execution time
-        exec_time = round(time.time() - start_time, 1)
+        end_time = time.time()
+        exec_time = round(end_time - start_time, 1)
         if parsed_lines:
-            mean_per_line = 1000000.0 * (exec_time / parsed_lines)
+            parse_time = round(parse_end_time - parse_start_time, 1)
+            mean_per_line = 1000000.0 * (parse_time / parsed_lines)
         else:
+            parse_time = 0
             mean_per_line = 0.0
-        logger.info("duration=%ss parsed=%d skipped=%d mean_per_line=%0.3fµs" %
-                    (exec_time, parsed_lines, skipped_lines, mean_per_line))
+
+        logger.info("duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_per_line=%0.3fµs" %
+                    (exec_time, parsed_lines, parse_time, skipped_lines, mean_per_line))
 
 
 def main():
