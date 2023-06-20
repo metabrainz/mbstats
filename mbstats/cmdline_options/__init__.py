@@ -173,7 +173,6 @@ def parse_options():
     common.add_argument('-L', '--loop-delay', type=float,
                         help='Delay between each run in seconds. If set to 0 or less, run only once.')
 
-
     influx = parser.add_argument_group('influxdb arguments')
     influx.add_argument('--influx-host',
                         help="influxdb host")

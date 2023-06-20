@@ -349,7 +349,6 @@ def parsefile(tailer, status, options, logger=None, first_loop=False):
         if skipped_lines and logger and options.quiet < 2:
             logger.info("Skipped %d unordered lines" % skipped_lines)
 
-
     tailer.update_offset_file()
     last_bucket = bucket
     leftover = get_storage()
@@ -710,7 +709,6 @@ def main_loop(options, logger, start_time=None, first_loop=False):
     else:
         files['offset'].rename_tmp_to_main()
         files['status'].rename_tmp_to_main()
-        retcode = 0
     finally:
         if files:
             files['offset'].remove_tmp()
