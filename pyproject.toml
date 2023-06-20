@@ -12,6 +12,7 @@ influxdb = "^5.3.1"
 portalocker = "^2.7.0"
 pygtail = "^0.14.0"
 pytest = "^7.3.2"
+pytest-cov = "^4.1.0"
 
 [tool.poetry.group.dev.dependencies]
 isort = "^5.12.0"
