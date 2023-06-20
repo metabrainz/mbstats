@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - newloop
     tags:
       - 'v*.*.*'
 
@@ -28,7 +27,7 @@ jobs:
           # generate Docker tags based on the following events/attributes
           tags: |
             type=semver,pattern={{raw}}
-            type=edge,branch=newloop
+            type=edge,branch=master
           flavor: |
             latest=auto
             prefix=
@@ -55,3 +54,5 @@ jobs:
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
+
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
