@@ -125,7 +125,7 @@ def parse_options():
         'influx_drop_database': False,
         'locker': 'fcntl',
         'lookback_factor': 2,
-        'send_failure_fifo_size': 30,
+        'send_failure_fifo_size': 30000,
         'simulate_send_failure': False,
         'startover': False,
         'log_handler': 'file',
