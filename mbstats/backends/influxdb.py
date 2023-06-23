@@ -138,11 +138,11 @@ class InfluxBackend(Backend):
         return True
 
     @staticmethod
-    def point_dict(measurement, fields, tags=None, time=None):
+    def point_dict(measurement, fields, tags=None, time_rfc3339=None):
         return {
             "measurement": measurement,
             "tags": tags or {},
-            "time": time or timestamp_RFC3339(time.time()),
+            "time": time_rfc3339 or timestamp_RFC3339(time.time()),
             "fields": fields,
         }
 
@@ -165,7 +165,7 @@ class InfluxBackend(Backend):
                     measurement,
                     {'value': value},
                     tags=influxtags,
-                    time= bucket2time(tags[0], status['bucket_duration']),
+                    time_rfc3339=bucket2time(tags[0], status['bucket_duration']),
                 )
 
     def add_points(self, mbs, status):
