@@ -672,7 +672,7 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
                     if options.simulate_send_failure:
                         raise MBStatsSendPointsFailed('Simulating send failure (resend)')
                     if not backend.send_points(tags=tags, points=to_resend):
-                        raise MBStatsSendPointsFailed('influx_send failed')
+                        raise MBStatsSendPointsFailed('influx_send failed (resend)')
                     resent_points = len(to_resend)
                     status['saved_points'].clear()
                 except BackendDryRun as e:
@@ -686,9 +686,9 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
             if backend.points:
                 try:
                     if options.simulate_send_failure:
-                        raise MBStatsSendPointsFailed('Simulating send failure')
+                        raise MBStatsSendPointsFailed('Simulating send failure (mbs)')
                     if not backend.send_points(tags=tags):
-                        raise MBStatsSendPointsFailed('influx_send failed')
+                        raise MBStatsSendPointsFailed('influx_send failed (mbs)')
                     sent_points = len(backend.points)
                     backend.points = None
                 except BackendDryRun as e:
@@ -743,12 +743,10 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
          backend.point_dict('mbstats', own_stats_fields)
     ]
     try:
-        logger.info("Trying to send %d own stats points" %
-                    len(points))
         if options.simulate_send_failure:
             raise MBStatsSendPointsFailed('Simulating send failure (ownstats)')
         if not backend.send_points(tags=tags, points=points):
-            raise MBStatsSendPointsFailed('influx_send failed')
+            raise MBStatsSendPointsFailed('influx_send failed (ownstats)')
     except BackendDryRun as e:
         logger.debug("Dry run: %s" % e)
     except MBStatsSendPointsFailed as e:
