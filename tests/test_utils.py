@@ -12,6 +12,7 @@ from mbstats.utils import (
     msec2bucket,
     read_config,
     save_obj,
+    timestamp_RFC3339,
 )
 
 
@@ -25,7 +26,7 @@ class TestUtils(unittest.TestCase):
         self.test_dir.cleanup()
 
     def test_lineno(self):
-        self.assertEqual(lineno(), 28)  #  if this line moves, change the number
+        self.assertEqual(lineno(), 29)  #  if this line moves, change the number
 
     def test_save_load_obj(self):
         obj = {'test': 666}
@@ -90,6 +91,11 @@ class TestUtils(unittest.TestCase):
 
         read_config(conf_file, defaults_options)
         self.assertEqual(defaults_options['boolval'], True)
+
+    def test_timestamp_RFC3339(self):
+        msec = 1568962553.325
+        self.assertEqual(timestamp_RFC3339(msec), '2019-09-20T06:55:53.325000Z')
+        self.assertEqual(timestamp_RFC3339(0), '1970-01-01T00:00:00Z')
 
     def test_bucket2time(self):
         msec = 1568962553.325
