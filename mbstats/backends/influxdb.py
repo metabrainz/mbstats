@@ -132,7 +132,7 @@ class InfluxBackend(Backend):
                 if options.quiet < 2:
                     logger.info("Sending %d points" % len(points))
             if not self.client:
-                raise BackendDryRun(points)
+                raise BackendDryRun({'points': points, 'tags': tags, 'batch_size': batch_size})
             return self.client.write_points(points, tags=tags, time_precision='m',
                                             batch_size=batch_size)
         return True
