@@ -590,7 +590,7 @@ class MBStatsSignalCatched(MBStatsException):
     """Raised when a signal is catched, usually leads to exit"""
 
 
-def main_loop(options, logger, start_time=None, first_loop=False):
+def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
     if start_time is None:
         start_time = time.time()
 
@@ -660,13 +660,6 @@ def main_loop(options, logger, start_time=None, first_loop=False):
 
         backend.add_points(mbs, status)
         if backend.points or status['saved_points']:
-            tags = {
-                'host': options.hostname,
-                'name': options.name or options.file,
-            }
-            if options.datacenter:
-                tags['dc'] = options.datacenter
-
             if status['saved_points']:
                 to_resend = list()
                 for savedpoints in status['saved_points']:
@@ -774,10 +767,16 @@ def main():
     try:
         retcode = 1
         first_loop = True
+        tags = {
+            'host': options.hostname,
+            'name': options.name or options.file,
+        }
+        if options.datacenter:
+            tags['dc'] = options.datacenter
         while True:
             start = time.time()
             try:
-                main_loop(options, logger, start_time=start, first_loop=first_loop)
+                main_loop(options, logger, start_time=start, first_loop=first_loop, tags=tags)
                 first_loop = False
             except (MBStatsSignalCatched, KeyboardInterrupt):
                 raise
