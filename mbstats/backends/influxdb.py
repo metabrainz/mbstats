@@ -78,6 +78,25 @@ MBS_TAGS = {
 }
 
 
+def _process_request_length_mean_value(value):
+    # workaround for int vs float type issue
+    val = value
+    if isinstance(val, str):
+        newval = ''
+        for c in val:
+            if c.isdigit():
+                newval += c
+        val = newval
+    if not isinstance(val, int):
+        return int(val)
+    return value
+
+
+PROCESS_MEASUREMENT_VALUE = {
+    'request_length_mean': _process_request_length_mean_value,
+}
+
+
 class InfluxBackend(Backend):
     def __init__(self, options, logger=None):
         if not has_influxdb:
@@ -101,21 +120,6 @@ class InfluxBackend(Backend):
         client.create_database(database)
         self.client = client
 
-    def _preprocess_points(self, points):
-        for point in list(points):
-            if point['measurement'] == 'request_length_mean':
-                # workaround for int vs float type issue
-                val = point['fields']['value']
-                if isinstance(val, str):
-                    newval = ''
-                    for c in val:
-                        if c.isdigit():
-                            newval += c
-                    val = newval
-                if not isinstance(val, int):
-                    point['fields']['value'] = int(val)
-            yield point
-
     def send_points(self, tags=None, points=None, batch_size=None):
         options = self.options
         logger = self.logger
@@ -123,7 +127,6 @@ class InfluxBackend(Backend):
             batch_size = options.influx_batch_size
         if points is None:
             points = self.points
-        points = list(self._preprocess_points(points))
         if points:
             if logger:
                 if options.quiet < 2:
@@ -156,6 +159,8 @@ class InfluxBackend(Backend):
                         else:
                             influxtags[k] = 'http'
                     influxtags[k] = str(v)
+                if measurement in PROCESS_MEASUREMENT_VALUE:
+                    value = PROCESS_MEASUREMENT_VALUE[measurement](value)
                 yield self.point_dict(
                     measurement,
                     {'value': value},
