@@ -740,7 +740,7 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
         logger.info("duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_time_per_line_seconds=%0.3fµs" %
                     (duration_seconds, parsed_lines, parse_duration_seconds, skipped_lines, 1000000.0 * mean_time_per_line_seconds))
     points = [
-         backend.point_dict('mbstats', own_stats_fields)
+        backend.point_dict('mbstats', own_stats_fields)
     ]
     try:
         if options.simulate_send_failure:
