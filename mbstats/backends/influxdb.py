@@ -99,6 +99,21 @@ class InfluxBackend(Backend):
         client.create_database(database)
         self.client = client
 
+    def _preprocess_points(self, points):
+        for point in list(points):
+            if point['measurement'] == 'request_length_mean':
+                # workaround for int vs float type issue
+                val = point['fields']['value']
+                if isinstance(val, str):
+                    newval = ''
+                    for c in val:
+                        if c.isdigit():
+                            newval += c
+                    val = newval
+                if not isinstance(val, int):
+                    point['fields']['value'] = int(val)
+            yield point
+
     def send_points(self, tags=None, points=None, batch_size=None):
         options = self.options
         logger = self.logger
@@ -106,24 +121,13 @@ class InfluxBackend(Backend):
             batch_size = options.influx_batch_size
         if points is None:
             points = self.points
+        points = list(self._preprocess_points(points))
         if points:
             if logger:
                 if options.quiet < 2:
                     logger.info("Sending %d points" % len(points))
             if not self.client:
                 raise BackendDryRun(points)
-            for point in points:
-                if point['measurement'] == 'request_length_mean':
-                    # workaround for int vs float type issue
-                    val = point['fields']['value']
-                    if isinstance(val, str):
-                        newval = ''
-                        for c in val:
-                            if c.isdigit():
-                                newval += c
-                        val = newval
-                    if not isinstance(val, int):
-                        point['fields']['value'] = int(val)
             return self.client.write_points(points, tags=tags, time_precision='m',
                                             batch_size=batch_size)
         return True
