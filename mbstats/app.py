@@ -723,15 +723,15 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
         parse_duration_seconds = round(parse_end_time - parse_start_time, 1)
         mean_time_per_line_seconds = parse_duration_seconds / float(parsed_lines)
     else:
-        parse_duration_seconds = 0
+        parse_duration_seconds = 0.0
         mean_time_per_line_seconds = 0.0
 
     own_stats_fields = {
-        'duration_seconds': duration_seconds,
+        'duration_seconds': float(duration_seconds),
         'parsed_lines': parsed_lines,
-        'parse_duration_seconds': parse_duration_seconds,
+        'parse_duration_seconds': float(parse_duration_seconds),
         'skipped_lines': skipped_lines,
-        'mean_time_per_line_seconds': mean_time_per_line_seconds,
+        'mean_time_per_line_seconds': float(mean_time_per_line_seconds),
         'sent_points': sent_points,
         'resent_points': resent_points,
     }
