@@ -596,6 +596,8 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
 
     parsed_lines = 0
     skipped_lines = 0
+    resent_points = 0
+    sent_points = 0
     files = None
     lock = None
     try:
@@ -669,10 +671,12 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
                                 len(to_resend))
                     if options.simulate_send_failure:
                         raise MBStatsSendPointsFailed('Simulating send failure (resend)')
-                    if not backend.send_points(tags, points=to_resend):
+                    if not backend.send_points(tags=tags, points=to_resend):
                         raise MBStatsSendPointsFailed('influx_send failed')
+                    resent_points = len(to_resend)
                     status['saved_points'].clear()
                 except BackendDryRun as e:
+                    resent_points = len(to_resend)
                     logger.debug("Dry run: %s" % e)
                 except MBStatsSendPointsFailed as e:
                     logger.warning(e)
@@ -683,10 +687,12 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
                 try:
                     if options.simulate_send_failure:
                         raise MBStatsSendPointsFailed('Simulating send failure')
-                    if not backend.send_points(tags):
+                    if not backend.send_points(tags=tags):
                         raise MBStatsSendPointsFailed('influx_send failed')
+                    sent_points = len(backend.points)
                     backend.points = None
                 except BackendDryRun as e:
+                    sent_points = len(backend.points)
                     logger.debug("Dry run: %s" % e)
                 except MBStatsSendPointsFailed as e:
                     logger.warning(e)
@@ -712,25 +718,43 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
 
     # Log the execution time
     end_time = time.time()
-    exec_time = round(end_time - start_time, 1)
+    duration_seconds = round(end_time - start_time, 1)
     if parsed_lines:
-        parse_time = round(parse_end_time - parse_start_time, 1)
-        mean_per_line = 1000000.0 * (parse_time / parsed_lines)
+        parse_duration_seconds = round(parse_end_time - parse_start_time, 1)
+        mean_time_per_line_seconds = parse_duration_seconds / float(parsed_lines)
     else:
-        parse_time = 0
-        mean_per_line = 0.0
+        parse_duration_seconds = 0
+        mean_time_per_line_seconds = 0.0
 
     own_stats_fields = {
-        'duration': exec_time,
-        'parsedlines': parsed_lines,
-        'parseduration': parse_time,
-        'skippedlines': skipped_lines,
-        'meantimeperline': mean_per_line,
+        'duration_seconds': duration_seconds,
+        'parsed_lines': parsed_lines,
+        'parse_duration_seconds': parse_duration_seconds,
+        'skipped_lines': skipped_lines,
+        'mean_time_per_line_seconds': mean_time_per_line_seconds,
+        'sent_points': sent_points,
+        'resent_points': resent_points,
     }
 
     if options.quiet < 2:
-        logger.info("duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_per_line=%0.3fµs" %
-                    (exec_time, parsed_lines, parse_time, skipped_lines, mean_per_line))
+        logger.info("duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_time_per_line_seconds=%0.3fµs" %
+                    (duration_seconds, parsed_lines, parse_duration_seconds, skipped_lines, 1000000.0 * mean_time_per_line_seconds))
+    points = [
+         backend.point_dict('mbstats', own_stats_fields)
+    ]
+    try:
+        logger.info("Trying to send %d own stats points" %
+                    len(points))
+        if options.simulate_send_failure:
+            raise MBStatsSendPointsFailed('Simulating send failure (ownstats)')
+        if not backend.send_points(tags=tags, points=points):
+            raise MBStatsSendPointsFailed('influx_send failed')
+    except BackendDryRun as e:
+        logger.debug("Dry run: %s" % e)
+    except MBStatsSendPointsFailed as e:
+        logger.warning(e)
+    except Exception as e:
+        logger.error(e, exc_info=True)
 
 
 def main():
