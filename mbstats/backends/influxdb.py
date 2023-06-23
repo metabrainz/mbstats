@@ -132,8 +132,7 @@ class InfluxBackend(Backend):
                                             batch_size=batch_size)
         return True
 
-    def add_points(self, mbs, status):
-        self.points = []
+    def _add_points(self, mbs, status):
         for measurement, tagnames in list(MBS_TAGS.items()):
             if measurement not in mbs:
                 continue
@@ -146,10 +145,14 @@ class InfluxBackend(Backend):
                         else:
                             influxtags[k] = 'http'
                     influxtags[k] = str(v)
-                fields = {'value': value}
-                self.points.append({
+                yield {
                     "measurement": measurement,
                     "tags": influxtags,
                     "time": bucket2time(tags[0], status['bucket_duration']),
-                    "fields": fields
-                })
+                    "fields": {
+                        'value': value,
+                    }
+                }
+
+    def add_points(self, mbs, status):
+        self.points = list(self._add_points(mbs, status))
