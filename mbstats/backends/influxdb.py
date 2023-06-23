@@ -99,9 +99,11 @@ class InfluxBackend(Backend):
         client.create_database(database)
         self.client = client
 
-    def send_points(self, tags, points=None):
+    def send_points(self, tags=None, points=None, batch_size=None):
         options = self.options
         logger = self.logger
+        if batch_size is None:
+            batch_size = options.influx_batch_size
         if points is None:
             points = self.points
         if points:
@@ -123,7 +125,7 @@ class InfluxBackend(Backend):
                     if not isinstance(val, int):
                         point['fields']['value'] = int(val)
             return self.client.write_points(points, tags=tags, time_precision='m',
-                                            batch_size=options.influx_batch_size)
+                                            batch_size=batch_size)
         return True
 
     def add_points(self, mbs, status):
