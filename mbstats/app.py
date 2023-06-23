@@ -590,12 +590,14 @@ class MBStatsSignalCatched(MBStatsException):
     """Raised when a signal is catched, usually leads to exit"""
 
 
-def main_loop(options, logger, start_time=None, first_loop=False):
+def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
     if start_time is None:
         start_time = time.time()
 
     parsed_lines = 0
     skipped_lines = 0
+    resent_points = 0
+    sent_points = 0
     files = None
     lock = None
     try:
@@ -660,13 +662,6 @@ def main_loop(options, logger, start_time=None, first_loop=False):
 
         backend.add_points(mbs, status)
         if backend.points or status['saved_points']:
-            tags = {
-                'host': options.hostname,
-                'name': options.name or options.file,
-            }
-            if options.datacenter:
-                tags['dc'] = options.datacenter
-
             if status['saved_points']:
                 to_resend = list()
                 for savedpoints in status['saved_points']:
@@ -676,10 +671,12 @@ def main_loop(options, logger, start_time=None, first_loop=False):
                                 len(to_resend))
                     if options.simulate_send_failure:
                         raise MBStatsSendPointsFailed('Simulating send failure (resend)')
-                    if not backend.send_points(tags, points=to_resend):
-                        raise MBStatsSendPointsFailed('influx_send failed')
+                    if not backend.send_points(tags=tags, points=to_resend):
+                        raise MBStatsSendPointsFailed('influx_send failed (resend)')
+                    resent_points = len(to_resend)
                     status['saved_points'].clear()
                 except BackendDryRun as e:
+                    resent_points = len(to_resend)
                     logger.debug("Dry run: %s" % e)
                 except MBStatsSendPointsFailed as e:
                     logger.warning(e)
@@ -689,11 +686,13 @@ def main_loop(options, logger, start_time=None, first_loop=False):
             if backend.points:
                 try:
                     if options.simulate_send_failure:
-                        raise MBStatsSendPointsFailed('Simulating send failure')
-                    if not backend.send_points(tags):
-                        raise MBStatsSendPointsFailed('influx_send failed')
+                        raise MBStatsSendPointsFailed('Simulating send failure (mbs)')
+                    if not backend.send_points(tags=tags):
+                        raise MBStatsSendPointsFailed('influx_send failed (mbs)')
+                    sent_points = len(backend.points)
                     backend.points = None
                 except BackendDryRun as e:
+                    sent_points = len(backend.points)
                     logger.debug("Dry run: %s" % e)
                 except MBStatsSendPointsFailed as e:
                     logger.warning(e)
@@ -717,19 +716,43 @@ def main_loop(options, logger, start_time=None, first_loop=False):
         unlock(lock)
         atexit.unregister(unlock)
 
-    if options.quiet < 2:
-        # Log the execution time
-        end_time = time.time()
-        exec_time = round(end_time - start_time, 1)
-        if parsed_lines:
-            parse_time = round(parse_end_time - parse_start_time, 1)
-            mean_per_line = 1000000.0 * (parse_time / parsed_lines)
-        else:
-            parse_time = 0
-            mean_per_line = 0.0
+    # Log the execution time
+    end_time = time.time()
+    duration_seconds = round(end_time - start_time, 1)
+    if parsed_lines:
+        parse_duration_seconds = round(parse_end_time - parse_start_time, 1)
+        mean_time_per_line_seconds = parse_duration_seconds / float(parsed_lines)
+    else:
+        parse_duration_seconds = 0
+        mean_time_per_line_seconds = 0.0
 
-        logger.info("duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_per_line=%0.3fµs" %
-                    (exec_time, parsed_lines, parse_time, skipped_lines, mean_per_line))
+    own_stats_fields = {
+        'duration_seconds': duration_seconds,
+        'parsed_lines': parsed_lines,
+        'parse_duration_seconds': parse_duration_seconds,
+        'skipped_lines': skipped_lines,
+        'mean_time_per_line_seconds': mean_time_per_line_seconds,
+        'sent_points': sent_points,
+        'resent_points': resent_points,
+    }
+
+    if options.quiet < 2:
+        logger.info("duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_time_per_line_seconds=%0.3fµs" %
+                    (duration_seconds, parsed_lines, parse_duration_seconds, skipped_lines, 1000000.0 * mean_time_per_line_seconds))
+    points = [
+        backend.point_dict('mbstats', own_stats_fields)
+    ]
+    try:
+        if options.simulate_send_failure:
+            raise MBStatsSendPointsFailed('Simulating send failure (ownstats)')
+        if not backend.send_points(tags=tags, points=points):
+            raise MBStatsSendPointsFailed('influx_send failed (ownstats)')
+    except BackendDryRun as e:
+        logger.debug("Dry run: %s" % e)
+    except MBStatsSendPointsFailed as e:
+        logger.warning(e)
+    except Exception as e:
+        logger.error(e, exc_info=True)
 
 
 def main():
@@ -766,10 +789,16 @@ def main():
     try:
         retcode = 1
         first_loop = True
+        tags = {
+            'host': options.hostname,
+            'name': options.name or options.file,
+        }
+        if options.datacenter:
+            tags['dc'] = options.datacenter
         while True:
             start = time.time()
             try:
-                main_loop(options, logger, start_time=start, first_loop=first_loop)
+                main_loop(options, logger, start_time=start, first_loop=first_loop, tags=tags)
                 first_loop = False
             except (MBStatsSignalCatched, KeyboardInterrupt):
                 raise
