@@ -41,11 +41,13 @@
 # http://www.gnu.org/licenses/gpl.txt
 #
 
+import time
+
 from mbstats.backends import (
     Backend,
     BackendDryRun,
 )
-from mbstats.utils import bucket2time
+from mbstats.utils import bucket2time, timestamp_RFC3339
 
 
 try:
@@ -132,6 +134,15 @@ class InfluxBackend(Backend):
                                             batch_size=batch_size)
         return True
 
+    @staticmethod
+    def point_dict(measurement, fields, tags=None, time=None):
+        return {
+            "measurement": measurement,
+            "tags": tags or {},
+            "time": time or timestamp_RFC3339(time.time()),
+            "fields": fields,
+        }
+
     def _add_points(self, mbs, status):
         for measurement, tagnames in list(MBS_TAGS.items()):
             if measurement not in mbs:
@@ -145,14 +156,12 @@ class InfluxBackend(Backend):
                         else:
                             influxtags[k] = 'http'
                     influxtags[k] = str(v)
-                yield {
-                    "measurement": measurement,
-                    "tags": influxtags,
-                    "time": bucket2time(tags[0], status['bucket_duration']),
-                    "fields": {
-                        'value': value,
-                    }
-                }
+                yield self.point_dict(
+                    measurement,
+                    {'value': value},
+                    tags=influxtags,
+                    time= bucket2time(tags[0], status['bucket_duration']),
+                )
 
     def add_points(self, mbs, status):
         self.points = list(self._add_points(mbs, status))
