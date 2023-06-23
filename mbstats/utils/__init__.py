@@ -71,11 +71,14 @@ def load_obj(filepath, logger=None):
             logger.debug("load_obj(): loading from %r" % filepath)
         return pickle.load(f)
 
+
 def timestamp_RFC3339(timestamp):
     return datetime.datetime.utcfromtimestamp(timestamp).isoformat() + 'Z'
 
+
 def bucket2time(bucket, bucket_duration):
     return timestamp_RFC3339(bucket * bucket_duration)
+
 
 def msec2bucket(msec, bucket_duration):
     return int(math.ceil(float(msec) / float(bucket_duration)))
