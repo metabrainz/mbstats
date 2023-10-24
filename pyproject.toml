@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mbstats"
-version = "1.2.0"
+version = "1.2.3"
 description = "nginx near-realtime log files analyzer"
 authors = ["Laurent Monin"]
 license = "GPLv3"
