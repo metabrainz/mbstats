@@ -39,27 +39,14 @@
 # http://www.gnu.org/licenses/gpl.txt
 #
 
-import os
 import time
 
 from mbstats.backends import (
     Backend,
     BackendDryRun,
 )
+from mbstats.influxdb1x import InfluxDBClient
 from mbstats.utils import bucket2time, timestamp_RFC3339
-
-if os.environ.get("MBSTATS_USE_VENDORED_INFLUXDB"):
-    from mbstats.influxdb1x import InfluxDBClient
-
-    has_influxdb = True
-else:
-    try:
-        from influxdb import InfluxDBClient
-
-        has_influxdb = True
-    except ImportError:
-        has_influxdb = False
-
 
 MBS_TAGS = {
     'hits': ('vhost', 'protocol', 'loctag'),
@@ -103,8 +90,6 @@ PROCESS_MEASUREMENT_VALUE = {
 
 class InfluxBackend(Backend):
     def __init__(self, options, logger=None):
-        if not has_influxdb:
-            options.dry_run = True
         super().__init__(options, logger=logger)
 
     def initialize(self):
