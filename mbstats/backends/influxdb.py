@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 #
 # mbstats
 #
@@ -49,9 +47,9 @@ from mbstats.backends import (
 )
 from mbstats.utils import bucket2time, timestamp_RFC3339
 
-
 try:
     from influxdb import InfluxDBClient
+
     has_influxdb = True
 except ImportError:
     has_influxdb = False
@@ -108,12 +106,14 @@ class InfluxBackend(Backend):
         if options.dry_run:
             return
         database = options.influx_database
-        client = InfluxDBClient(host=options.influx_host,
-                                port=options.influx_port,
-                                username=options.influx_username,
-                                password=options.influx_password,
-                                database=database,
-                                timeout=options.influx_timeout)
+        client = InfluxDBClient(
+            host=options.influx_host,
+            port=options.influx_port,
+            username=options.influx_username,
+            password=options.influx_password,
+            database=database,
+            timeout=options.influx_timeout,
+        )
         if options.influx_drop_database:
             client.drop_database(database)
 
@@ -132,9 +132,12 @@ class InfluxBackend(Backend):
                 if options.quiet < 2:
                     logger.info("Sending %d points" % len(points))
             if not self.client:
-                raise BackendDryRun({'points': points, 'tags': tags, 'batch_size': batch_size})
-            return self.client.write_points(points, tags=tags, time_precision='m',
-                                            batch_size=batch_size)
+                raise BackendDryRun(
+                    {'points': points, 'tags': tags, 'batch_size': batch_size}
+                )
+            return self.client.write_points(
+                points, tags=tags, time_precision='m', batch_size=batch_size
+            )
         return True
 
     @staticmethod

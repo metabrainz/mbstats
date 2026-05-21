@@ -20,10 +20,7 @@ mbstats = "mbstats.app:main"
 dev = [
     "pytest>=9.0.3",
     "pytest-cov>=6.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-    "coverage>=7.2.7",
-    "pylint>=2.17.4",
+    "ruff>=0.13.0",
 ]
 
 [build-system]
@@ -32,3 +29,19 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+src = ["mbstats"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "UP"]
+ignore = ["E501", "B904", "B905", "UP031"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "preserve"
+indent-style = "space"
+line-ending = "lf"

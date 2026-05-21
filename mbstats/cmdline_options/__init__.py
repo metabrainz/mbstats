@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 #
 # mbstats
 #
@@ -49,17 +47,16 @@ from mbstats.utils import read_config
 
 
 class ParseOptionsSysExit(Exception):
-
     def __init__(self, exit_code, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.code = exit_code
 
 
 def parse_options():
-    description = \
+    description = (
         """Tail and parse a formatted nginx log file, sending results to InfluxDB."""
-    epilog = \
-        """
+    )
+    epilog = """
     To use add following to http section of your nginx configuration:
 
       log_format stats
@@ -110,7 +107,6 @@ def parse_options():
         'name': '',
         'quiet': 0,
         'workdir': '.',
-
         'influx_batch_size': 500,
         'influx_database': 'mbstats',
         'influx_host': 'localhost',
@@ -118,7 +114,6 @@ def parse_options():
         'influx_port': 8086,
         'influx_timeout': 40,
         'influx_username': 'root',
-
         'bucket_duration': 60,
         'debug': False,
         'do_not_skip_to_end': False,
@@ -132,8 +127,13 @@ def parse_options():
         'loop_delay': -1.0,
     }
     conf_parser = argparse.ArgumentParser(add_help=False)
-    conf_parser.add_argument("-c", "--config", help="Specify json config file(s)",
-                             action='append', metavar="FILE")
+    conf_parser.add_argument(
+        "-c",
+        "--config",
+        help="Specify json config file(s)",
+        action='append',
+        metavar="FILE",
+    )
     args, remaining_argv = conf_parser.parse_known_args()
 
     if args.config:
@@ -141,82 +141,120 @@ def parse_options():
             default_options['config'].append(conf_path)
             read_config(conf_path, default_options)
 
-    parser = argparse.ArgumentParser(description=description, epilog=epilog,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter,
-                                     parents=[conf_parser], conflict_handler='resolve')
+    parser = argparse.ArgumentParser(
+        description=description,
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        parents=[conf_parser],
+        conflict_handler='resolve',
+    )
     parser.set_defaults(**default_options)
 
     required = parser.add_argument_group('required arguments')
-    required.add_argument('-f', '--file',
-                          help="log file to process")
+    required.add_argument('-f', '--file', help="log file to process")
 
     common = parser.add_argument_group('common arguments')
-    common.add_argument('-c', '--config', action='append', metavar='FILE',
-                        help="Specify json config file(s)")
-    common.add_argument('-d', '--datacenter',
-                        help="string to use as 'dc' tag")
-    common.add_argument('-H', '--hostname',
-                        help="string to use as 'host' tag")
-    common.add_argument('-l', '--log-dir', action='store',
-                        help='Where to store the stats.parser logfile.  Default location is workdir')
-    common.add_argument('-n', '--name',
-                        help="string to use as 'name' tag")
-    common.add_argument('-m', '--max-lines', type=int,
-                        help="maximum number of lines to process per loop")
-    common.add_argument('-w', '--workdir',
-                        help="directory where offset/status are stored")
-    common.add_argument('-y', '--dry-run', action='store_true',
-                        help='Parse the log file but send stats to standard output')
-    common.add_argument('-q', '--quiet', action='count',
-                        help='Reduce verbosity / quiet mode')
-    common.add_argument('-L', '--loop-delay', type=float,
-                        help='Delay between each run in seconds. If set to 0 or less, run only once.')
+    common.add_argument(
+        '-c',
+        '--config',
+        action='append',
+        metavar='FILE',
+        help="Specify json config file(s)",
+    )
+    common.add_argument('-d', '--datacenter', help="string to use as 'dc' tag")
+    common.add_argument('-H', '--hostname', help="string to use as 'host' tag")
+    common.add_argument(
+        '-l',
+        '--log-dir',
+        action='store',
+        help='Where to store the stats.parser logfile.  Default location is workdir',
+    )
+    common.add_argument('-n', '--name', help="string to use as 'name' tag")
+    common.add_argument(
+        '-m',
+        '--max-lines',
+        type=int,
+        help="maximum number of lines to process per loop",
+    )
+    common.add_argument(
+        '-w', '--workdir', help="directory where offset/status are stored"
+    )
+    common.add_argument(
+        '-y',
+        '--dry-run',
+        action='store_true',
+        help='Parse the log file but send stats to standard output',
+    )
+    common.add_argument(
+        '-q', '--quiet', action='count', help='Reduce verbosity / quiet mode'
+    )
+    common.add_argument(
+        '-L',
+        '--loop-delay',
+        type=float,
+        help='Delay between each run in seconds. If set to 0 or less, run only once.',
+    )
 
     influx = parser.add_argument_group('influxdb arguments')
-    influx.add_argument('--influx-host',
-                        help="influxdb host")
-    influx.add_argument('--influx-port', type=int,
-                        help="influxdb port")
-    influx.add_argument('--influx-username',
-                        help="influxdb username")
-    influx.add_argument('--influx-password',
-                        help="influxdb password")
-    influx.add_argument('--influx-database',
-                        help="influxdb database")
-    influx.add_argument('--influx-timeout', type=int,
-                        help="influxdb timeout")
-    influx.add_argument('--influx-batch-size', type=int,
-                        help="number of points to send per batch")
+    influx.add_argument('--influx-host', help="influxdb host")
+    influx.add_argument('--influx-port', type=int, help="influxdb port")
+    influx.add_argument('--influx-username', help="influxdb username")
+    influx.add_argument('--influx-password', help="influxdb password")
+    influx.add_argument('--influx-database', help="influxdb database")
+    influx.add_argument('--influx-timeout', type=int, help="influxdb timeout")
+    influx.add_argument(
+        '--influx-batch-size', type=int, help="number of points to send per batch"
+    )
 
     expert = parser.add_argument_group('expert arguments')
-    expert.add_argument('-D', '--debug', action='store_true',
-                        help="Enable debug mode")
-    expert.add_argument('--influx-drop-database', action='store_true',
-                        help="drop existing InfluxDB database, use with care")
-    expert.add_argument('--locker', choices=('fcntl', 'portalocker'),
-                        help="type of lock to use")
-    expert.add_argument('--lookback-factor', type=int,
-                        help="number of buckets to wait before sending any data")
-    expert.add_argument('--startover', action='store_true',
-                        help="ignore all status/offset, like a first run")
-    expert.add_argument('--do-not-skip-to-end', action='store_true',
-                        help="do not skip to end on first run")
-    expert.add_argument('--bucket-duration', type=int,
-                        help="duration for each bucket in seconds")
-    expert.add_argument('--log-conf', action='store',
-                        help='Logging configuration file. None by default')
-    expert.add_argument('--dump-config', action='store_true',
-                        help="dump config as json to stdout")
-    expert.add_argument('--log-handler', action='store',
-                        help="Log to (syslog, file, stdout)")
-    expert.add_argument('--send-failure-fifo-size', type=int,
-                        help="Number of failed sends to backup")
-    expert.add_argument('--simulate-send-failure', action='store_true',
-                        help="Simulate send failure for testing purposes")
+    expert.add_argument('-D', '--debug', action='store_true', help="Enable debug mode")
+    expert.add_argument(
+        '--influx-drop-database',
+        action='store_true',
+        help="drop existing InfluxDB database, use with care",
+    )
+    expert.add_argument(
+        '--locker', choices=('fcntl', 'portalocker'), help="type of lock to use"
+    )
+    expert.add_argument(
+        '--lookback-factor',
+        type=int,
+        help="number of buckets to wait before sending any data",
+    )
+    expert.add_argument(
+        '--startover',
+        action='store_true',
+        help="ignore all status/offset, like a first run",
+    )
+    expert.add_argument(
+        '--do-not-skip-to-end',
+        action='store_true',
+        help="do not skip to end on first run",
+    )
+    expert.add_argument(
+        '--bucket-duration', type=int, help="duration for each bucket in seconds"
+    )
+    expert.add_argument(
+        '--log-conf', action='store', help='Logging configuration file. None by default'
+    )
+    expert.add_argument(
+        '--dump-config', action='store_true', help="dump config as json to stdout"
+    )
+    expert.add_argument(
+        '--log-handler', action='store', help="Log to (syslog, file, stdout)"
+    )
+    expert.add_argument(
+        '--send-failure-fifo-size', type=int, help="Number of failed sends to backup"
+    )
+    expert.add_argument(
+        '--simulate-send-failure',
+        action='store_true',
+        help="Simulate send failure for testing purposes",
+    )
 
     options = parser.parse_args(remaining_argv)
     if options.dump_config:
-        print((json.dumps(vars(options), indent=4, sort_keys=True)))
+        print(json.dumps(vars(options), indent=4, sort_keys=True))
         raise ParseOptionsSysExit(0)
 
     if not options.file:

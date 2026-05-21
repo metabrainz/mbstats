@@ -32,13 +32,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
+      - name: Lint with ruff
+        run: uv run ruff check mbstats/
+
+      - name: Check formatting
+        run: uv run ruff format --check mbstats/ tests/
+
       - name: Test with pytest
         run: uv run pytest -v --cov=mbstats tests/
-
-      - name: Lint with flake8
-        run: uv run flake8 --show-source --statistics --count --ignore E501 mbstats/
-
-      - name: Lint with pylint
-        run: uv run pylint -j0 --exit-zero mbstats
 
 # vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
