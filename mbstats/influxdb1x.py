@@ -7,7 +7,7 @@ Vendored from influxdb-python (MIT License) with simplifications:
 - Retries with exponential backoff on connection errors
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import chain, islice
 import json
 from numbers import Integral
@@ -16,7 +16,7 @@ import time
 
 import urllib3
 
-EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 class InfluxDBClientError(Exception):
@@ -79,7 +79,7 @@ def _convert_timestamp(timestamp, precision=None):
             ts = ts[:-1] + "+00:00"
         dt = datetime.fromisoformat(ts)
     elif isinstance(timestamp, datetime):
-        dt = timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
+        dt = timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=UTC)
     else:
         raise ValueError(f"Unsupported timestamp type: {type(timestamp)}")
 
