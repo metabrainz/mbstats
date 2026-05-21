@@ -23,44 +23,22 @@ jobs:
       - name: Check out the code
         uses: actions/checkout@v6
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: '1.5.1'
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v5
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: venv-${{ runner.os }}-
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
-
-      - name: Install library
-        run: poetry install --no-interaction
-
-      - name: View poetry --version
-        run: poetry --version
+        run: uv sync --group dev
 
       - name: Test with pytest
-        run: |
-          poetry run python -m pytest -v --cov=mbstats tests/
+        run: uv run pytest -v --cov=mbstats tests/
+
       - name: Lint with flake8
-        run: |
-          poetry run flake8 --show-source --statistics --count --ignore E501 mbstats/
+        run: uv run flake8 --show-source --statistics --count --ignore E501 mbstats/
+
       - name: Lint with pylint
-        run: |
-          poetry run pylint -j0 --exit-zero mbstats
+        run: uv run pylint -j0 --exit-zero mbstats
 
 # vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
