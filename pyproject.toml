@@ -10,7 +10,6 @@ dependencies = [
     "urllib3>=2.0",
     "portalocker>=2.7.0",
     "pygtail>=0.14.0",
-    "certifi>=2023.7.22",
 ]
 
 [project.scripts]
