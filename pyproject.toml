@@ -28,6 +28,10 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requires a running InfluxDB instance (use -m integration to run)",
+]
+addopts = "-m 'not integration'"
 filterwarnings = [
     "ignore::pytest.PytestUnraisableExceptionWarning",
 ]

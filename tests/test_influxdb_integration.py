@@ -4,7 +4,6 @@ Requires: docker run -d --name influxdb-test -p 8086:8086 influxdb:1.8
 """
 
 import time
-import urllib.request
 
 import pytest
 
@@ -12,20 +11,7 @@ INFLUXDB_HOST = "localhost"
 INFLUXDB_PORT = 8086
 TEST_DB = "mbstats_integration_test"
 
-
-def influxdb_available():
-    try:
-        urllib.request.urlopen(
-            f"http://{INFLUXDB_HOST}:{INFLUXDB_PORT}/ping", timeout=2
-        )
-        return True
-    except Exception:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not influxdb_available(), reason="InfluxDB not available on localhost:8086"
-)
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
