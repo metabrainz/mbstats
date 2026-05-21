@@ -117,18 +117,16 @@ expert arguments:
 ## Dev
 
 
-Install [poetry](https://python-poetry.org/)
+Install [uv](https://docs.astral.sh/uv/)
 
 ```bash
-poetry shell
+uv sync --group dev
 
-poetry install
-
-mbstats --help
+uv run mbstats --help
 ```
 
 To run tests:
 
 ```bash
-poetry run pytest
+uv run pytest
 ```
