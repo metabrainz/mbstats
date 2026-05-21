@@ -70,7 +70,7 @@ def load_obj(filepath, logger=None):
 
 
 def timestamp_RFC3339(timestamp):
-    return datetime.datetime.utcfromtimestamp(timestamp).isoformat() + 'Z'
+    return datetime.datetime.fromtimestamp(timestamp, datetime.UTC).isoformat()
 
 
 def bucket2time(bucket, bucket_duration):
