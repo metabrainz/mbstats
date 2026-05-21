@@ -39,6 +39,7 @@
 # http://www.gnu.org/licenses/gpl.txt
 #
 
+import os
 import time
 
 from mbstats.backends import (
@@ -47,12 +48,17 @@ from mbstats.backends import (
 )
 from mbstats.utils import bucket2time, timestamp_RFC3339
 
-try:
-    from influxdb import InfluxDBClient
+if os.environ.get("MBSTATS_USE_VENDORED_INFLUXDB"):
+    from mbstats.influxdb1x import InfluxDBClient
 
     has_influxdb = True
-except ImportError:
-    has_influxdb = False
+else:
+    try:
+        from influxdb import InfluxDBClient
+
+        has_influxdb = True
+    except ImportError:
+        has_influxdb = False
 
 
 MBS_TAGS = {
