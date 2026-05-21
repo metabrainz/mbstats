@@ -1,13 +1,13 @@
-FROM python:3
+FROM python:3-slim
 
-RUN mkdir /app
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
-COPY pyproject.toml poetry.lock /app/
-ENV PYTHONPATH=${PYTHONPATH}:${PWD}
-ENV PIP_ROOT_USER_ACTION=ignore
-RUN pip install poetry && poetry config virtualenvs.create false && poetry install --no-root --no-directory
+ENV PATH="/app/.venv/bin:$PATH"
+COPY pyproject.toml uv.lock /app/
+RUN uv sync --frozen --no-install-project --no-dev
 COPY mbstats /app/mbstats
 COPY README.md /app/
-RUN poetry install --only main
+RUN uv sync --frozen --no-dev
 
-
+ENTRYPOINT ["mbstats"]

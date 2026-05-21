@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 #
 # mbstats
 #
@@ -46,16 +44,16 @@ import shutil
 from uuid import uuid1
 
 
-class SafeFile(object):
+class SafeFile:
     def __init__(self, workdir, identifier, suffix='', logger=None):
         self.identifier = identifier
         self.suffix = suffix
         self.sane_filename = re.sub(r'\W', '_', self.identifier + self.suffix)
         self.workdir = workdir
         self.main = os.path.join(self.workdir, self.sane_filename)
-        self.tmp = "%s.%s.tmp" % (self.main, uuid1().hex)
-        self.old = "%s.old" % (self.main)
-        self.lock = "%s.lock" % (self.main)
+        self.tmp = f"{self.main}.{uuid1().hex}.tmp"
+        self.old = f"{self.main}.old"
+        self.lock = f"{self.main}.lock"
         self.logger = logger
 
     def backup_main(self):
@@ -64,20 +62,28 @@ class SafeFile(object):
                 os.unlink(self.old)
             shutil.copy2(self.main, self.old)
             if self.logger:
-                self.logger.debug("backup_main(): Copied %r to %r" % (self.main, self.old))
+                self.logger.debug(
+                    f"backup_main(): Copied {self.main!r} to {self.old!r}"
+                )
         except Exception as e:
             if self.logger:
-                self.logger.warning("backup_main() failed: %r -> %r %s" % (self.main, self.old, e))
+                self.logger.warning(
+                    f"backup_main() failed: {self.main!r} -> {self.old!r} {e}"
+                )
 
     def rename_tmp_to_main(self):
         try:
             self.backup_main()
             os.rename(self.tmp, self.main)
             if self.logger:
-                self.logger.debug("rename_tmp_to_main(): Renamed %r to %r" % (self.tmp, self.main))
+                self.logger.debug(
+                    f"rename_tmp_to_main(): Renamed {self.tmp!r} to {self.main!r}"
+                )
         except Exception as e:
             if self.logger:
-                self.logger.error("rename_tmp_to_main(): failed: %r -> %r %s" % (self.tmp, self.main, e))
+                self.logger.error(
+                    f"rename_tmp_to_main(): failed: {self.tmp!r} -> {self.main!r} {e}"
+                )
             raise
 
     def remove_tmp(self):
@@ -85,20 +91,24 @@ class SafeFile(object):
             try:
                 os.remove(self.tmp)
                 if self.logger:
-                    self.logger.debug("remove_tmp(): Removed %r" % self.tmp)
+                    self.logger.debug(f"remove_tmp(): Removed {self.tmp!r}")
             except Exception as e:
                 if self.logger:
-                    self.logger.error("remove_tmp(): failed: %r %s" % (self.tmp, e))
+                    self.logger.error(f"remove_tmp(): failed: {self.tmp!r} {e}")
 
     def copy_main_to_tmp(self):
         if os.path.isfile(self.main):
             try:
                 shutil.copy2(self.main, self.tmp)
                 if self.logger:
-                    self.logger.debug("copy_main_to_tmp(): Copied %r to %r" % (self.main, self.tmp))
+                    self.logger.debug(
+                        f"copy_main_to_tmp(): Copied {self.main!r} to {self.tmp!r}"
+                    )
             except Exception as e:
                 if self.logger:
-                    self.logger.error("copy_main_to_tmp(): failed: %r -> %r %s" % (self.main, self.tmp, e))
+                    self.logger.error(
+                        f"copy_main_to_tmp(): failed: {self.main!r} -> {self.tmp!r} {e}"
+                    )
                 raise
 
     def remove_main(self):
@@ -107,7 +117,7 @@ class SafeFile(object):
         try:
             os.remove(self.main)
             if self.logger:
-                self.logger.debug("remove_main(): Removed %r" % (self.main))
+                self.logger.debug(f"remove_main(): Removed {self.main!r}")
         except Exception as e:
             if self.logger:
-                self.logger.error("remove_main(): failed: %r %s" % (self.main, e))
+                self.logger.error(f"remove_main(): failed: {self.main!r} {e}")

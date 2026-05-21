@@ -3,8 +3,17 @@
 This tool is meant to generate statistics about nginx traffic in near-realtime.
 For that, it reads a special access log file containing only needed data.
 It can run every minute (depending on configuration), and parses new lines added to the log file.
-It then pushes metrics to [InfluxDB](https://www.influxdata.com/).
+It then pushes metrics to [InfluxDB](https://www.influxdata.com/) 1.x.
 
+## Requirements
+
+- Python >= 3.10
+- InfluxDB 1.x
+
+Runtime dependencies (minimal):
+- `urllib3` — HTTP client for InfluxDB communication
+- `portalocker` — cross-platform file locking
+- `pygtail` — log file tailing with offset tracking
 
 ```
 usage: mbstats [-h] [-f FILE] [-c FILE] [-d DATACENTER] [-H HOSTNAME] [-l LOG_DIR] [-n NAME] [-m MAX_LINES] [-w WORKDIR] [-y] [-q] [-L LOOP_DELAY]
@@ -114,21 +123,46 @@ expert arguments:
     Note: first field in stats format declaration is a format version, it should be set to 1.
 ```
 
-## Dev
-
-
-Install [poetry](https://python-poetry.org/)
+## Docker
 
 ```bash
-poetry shell
+docker build -t mbstats .
+docker run --rm mbstats --help
+```
 
-poetry install
+## Dev
 
-mbstats --help
+Install [uv](https://docs.astral.sh/uv/)
+
+```bash
+uv sync --group dev
+
+uv run mbstats --help
 ```
 
 To run tests:
 
 ```bash
-poetry run pytest
+uv run pytest
+```
+
+To run integration tests (requires Docker):
+
+```bash
+docker run -d --name influxdb-test -p 8086:8086 influxdb:1.8
+uv run pytest tests/test_influxdb_integration.py -v
+docker rm -f influxdb-test
+```
+
+Linting and formatting (via [ruff](https://docs.astral.sh/ruff/)):
+
+```bash
+uv run ruff check mbstats/ tests/
+uv run ruff format mbstats/ tests/
+```
+
+Pre-commit hooks are configured — install with:
+
+```bash
+uvx pre-commit install
 ```

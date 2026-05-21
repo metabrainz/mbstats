@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 #
 # mbstats
 #
@@ -42,7 +40,6 @@
 #
 
 from mbstats import app
-
 
 if __name__ == "__main__":
     app.main()

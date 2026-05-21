@@ -94,8 +94,8 @@ class TestUtils(unittest.TestCase):
 
     def test_timestamp_RFC3339(self):
         msec = 1568962553.325
-        self.assertEqual(timestamp_RFC3339(msec), '2019-09-20T06:55:53.325000Z')
-        self.assertEqual(timestamp_RFC3339(0), '1970-01-01T00:00:00Z')
+        self.assertEqual(timestamp_RFC3339(msec), '2019-09-20T06:55:53.325000+00:00')
+        self.assertEqual(timestamp_RFC3339(0), '1970-01-01T00:00:00+00:00')
 
     def test_bucket2time(self):
         msec = 1568962553.325
@@ -106,8 +106,8 @@ class TestUtils(unittest.TestCase):
             self.assertEqual(t, expected_t)
             self.assertEqual(bucket, expected_bucket)
 
-        do_test(msec, 3600, '2019-09-20T07:00:00Z', 435823)
-        do_test(msec, 7200, '2019-09-20T08:00:00Z', 217912)
+        do_test(msec, 3600, '2019-09-20T07:00:00+00:00', 435823)
+        do_test(msec, 7200, '2019-09-20T08:00:00+00:00', 217912)
 
 
 if __name__ == '__main__':

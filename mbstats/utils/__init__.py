@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 #
 # mbstats
 #
@@ -46,7 +44,6 @@ import json
 import math
 import pickle
 
-
 # This provides a lineno() function to make it easy to grab the line
 # number that we're on (for logging)
 # Danny Yoo (dyoo@hkn.eecs.berkeley.edu)
@@ -62,18 +59,18 @@ def save_obj(obj, filepath, logger=None):
     with open(filepath, 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
         if logger is not None:
-            logger.debug("save_obj(): saved to %r" % filepath)
+            logger.debug(f"save_obj(): saved to {filepath!r}")
 
 
 def load_obj(filepath, logger=None):
     with open(filepath, 'rb') as f:
         if logger is not None:
-            logger.debug("load_obj(): loading from %r" % filepath)
+            logger.debug(f"load_obj(): loading from {filepath!r}")
         return pickle.load(f)
 
 
 def timestamp_RFC3339(timestamp):
-    return datetime.datetime.utcfromtimestamp(timestamp).isoformat() + 'Z'
+    return datetime.datetime.fromtimestamp(timestamp, datetime.UTC).isoformat()
 
 
 def bucket2time(bucket, bucket_duration):
@@ -85,7 +82,7 @@ def msec2bucket(msec, bucket_duration):
 
 
 def _read_config(conf_path):
-    with open(conf_path, 'r') as f:
+    with open(conf_path) as f:
         return json.load(f)
 
 

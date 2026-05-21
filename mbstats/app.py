@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 #
 # mbstats
 #
@@ -60,6 +58,8 @@ import signal
 import sys
 import time
 
+from pygtail import Pygtail
+
 from mbstats.backends import BackendDryRun
 from mbstats.backends.influxdb import InfluxBackend
 from mbstats.cmdline_options import (
@@ -77,8 +77,6 @@ from mbstats.utils import (
     msec2bucket,
     save_obj,
 )
-
-from pygtail import Pygtail
 
 
 # https://github.com/metabrainz/openresty-gateways/blob/master/files/nginx/nginx.conf#L23
@@ -108,8 +106,9 @@ def factory():
 types = defaultdict(factory)
 # pylint: disable=W0108
 types['upstream_status'] = lambda x: int(x)
-types['upstream_response_time'] = types['upstream_connect_time'] = types['upstream_header_time'] = lambda x: float(
-    x)
+types['upstream_response_time'] = types['upstream_connect_time'] = types[
+    'upstream_header_time'
+] = lambda x: float(x)
 # pylint: enable=W0108
 
 
@@ -125,21 +124,26 @@ def parse_upstreams(row):
     r['internal_redirects'] = len([x for x in splitted if len(x) > 1])
     upstream_addr = list(itertools.chain.from_iterable(splitted))
 
-    upstream_status = list(itertools.chain.from_iterable([x.split(' : ') for x
-                                                          in
-                                                          row['upstream_status'].split(", ")]))
-    upstream_response_time = \
-        list(itertools.chain.from_iterable([x.split(' : ') for x
-                                            in
-                                            row['upstream_response_time'].split(", ")]))
-    upstream_header_time = \
-        list(itertools.chain.from_iterable([x.split(' : ') for x
-                                            in
-                                            row['upstream_header_time'].split(", ")]))
-    upstream_connect_time = \
-        list(itertools.chain.from_iterable([x.split(' : ') for x
-                                            in
-                                            row['upstream_connect_time'].split(", ")]))
+    upstream_status = list(
+        itertools.chain.from_iterable(
+            [x.split(' : ') for x in row['upstream_status'].split(", ")]
+        )
+    )
+    upstream_response_time = list(
+        itertools.chain.from_iterable(
+            [x.split(' : ') for x in row['upstream_response_time'].split(", ")]
+        )
+    )
+    upstream_header_time = list(
+        itertools.chain.from_iterable(
+            [x.split(' : ') for x in row['upstream_header_time'].split(", ")]
+        )
+    )
+    upstream_connect_time = list(
+        itertools.chain.from_iterable(
+            [x.split(' : ') for x in row['upstream_connect_time'].split(", ")]
+        )
+    )
 
     r['status'] = dict()
     r['response_time'] = defaultdict(float)
@@ -149,12 +153,13 @@ def parse_upstreams(row):
     r['connect_time_count'] = defaultdict(int)
     r['header_time_count'] = defaultdict(int)
     r['servers'] = []
-    for item in zip(upstream_addr,
-                    upstream_status,
-                    upstream_response_time,
-                    upstream_connect_time,
-                    upstream_header_time
-                    ):
+    for item in zip(
+        upstream_addr,
+        upstream_status,
+        upstream_response_time,
+        upstream_connect_time,
+        upstream_header_time,
+    ):
         k = item[0]
         r['servers'].append(k)
         # not using defauldict() here intentionally, because it requires lamba/function
@@ -208,7 +213,7 @@ class ParseSkip(Exception):
 def parseline(line, last_msec=0, ignore_before=0, bucket_duration=60):
     items = line.split('|')
     if items[0] != '1':
-        raise ParseSkip("invalid log version: {}".format(items[0]))
+        raise ParseSkip(f"invalid log version: {items[0]}")
     try:
         msec = float(items[PosField.msec])
     except ValueError as e:
@@ -239,7 +244,9 @@ def parseline(line, last_msec=0, ignore_before=0, bucket_duration=60):
                 'upstream_status': items[PosField.upstream_status],
                 'upstream_response_time': items[PosField.upstream_response_time],
                 'upstream_connect_time': items[PosField.upstream_connect_time],
-                'upstream_header_time': items[PosField.upstream_header_time].rstrip('\r\n'),
+                'upstream_header_time': items[PosField.upstream_header_time].rstrip(
+                    '\r\n'
+                ),
             }
 
             row['upstreams'] = parse_upstreams(upstreams)
@@ -272,8 +279,9 @@ def parsefile(tailer, status, options, logger=None, first_loop=False):
         ignore_before = status['last_msec'] - bucket_duration * lookback_factor
     if logger:
         logger.debug(
-            "max_lines=%d bucket_duration=%d lookback_factor=%d ignore_before=%f" %
-            (max_lines, bucket_duration, lookback_factor, ignore_before))
+            "max_lines=%d bucket_duration=%d lookback_factor=%d ignore_before=%f"
+            % (max_lines, bucket_duration, lookback_factor, ignore_before)
+        )
     last_msec = 0
     last_bucket = 0
     if status['leftover'] is not None:
@@ -282,8 +290,13 @@ def parsefile(tailer, status, options, logger=None, first_loop=False):
         storage = status['leftover']
         if logger and options.quiet < 2:
             for bucket in storage:
-                logger.info("Previous leftover bucket: %s %d" %
-                            (bucket2time(bucket, status['bucket_duration']), len(storage[bucket])))
+                logger.info(
+                    "Previous leftover bucket: %s %d"
+                    % (
+                        bucket2time(bucket, status['bucket_duration']),
+                        len(storage[bucket]),
+                    )
+                )
     else:
         storage = get_storage()
         if logger:
@@ -312,34 +325,43 @@ def parsefile(tailer, status, options, logger=None, first_loop=False):
         last_msec = (bucket + lookback_factor) * bucket_duration
         skipped_lines = parsed_lines
         if logger:
-            logger.info("End of first run: bucket=%d last_msec=%f skipped=%d" %
-                        (bucket, last_msec, skipped_lines))
+            logger.info(
+                "End of first run: bucket=%d last_msec=%f skipped=%d"
+                % (bucket, last_msec, skipped_lines)
+            )
     else:
         try:
             for line in tailer:
                 parsed_lines += 1
                 try:
-                    row, last_msec, bucket = parseline(line,
-                                                       ignore_before=ignore_before,
-                                                       bucket_duration=bucket_duration,
-                                                       last_msec=last_msec)
+                    row, last_msec, bucket = parseline(
+                        line,
+                        ignore_before=ignore_before,
+                        bucket_duration=bucket_duration,
+                        last_msec=last_msec,
+                    )
                     storage[bucket].append(row)
                     ready_to_process = bucket - lookback_factor
 
                     if storage[ready_to_process]:
                         if logger and options.quiet < 2:
-                            logger.info("Processing bucket: %s %d" %
-                                        (bucket2time(ready_to_process,
-                                                     status['bucket_duration']),
-                                         len(storage[ready_to_process])))
+                            logger.info(
+                                "Processing bucket: %s %d"
+                                % (
+                                    bucket2time(
+                                        ready_to_process, status['bucket_duration']
+                                    ),
+                                    len(storage[ready_to_process]),
+                                )
+                            )
                         process_bucket(ready_to_process, storage, status, mbs)
                 except ParseSkip as e:
                     if logger:
-                        logger.error("%s: %s" % (line, e))
+                        logger.error(f"{line}: {e}")
                     skipped_lines += 1
                 except Exception as e:
                     if logger:
-                        logger.error("%s: %s" % (line, e))
+                        logger.error(f"{line}: {e}")
                     raise
                 if parsed_lines == max_lines:
                     raise ParseEnd
@@ -359,9 +381,13 @@ def parsefile(tailer, status, options, logger=None, first_loop=False):
         logger.debug("Leftovers %d" % len(leftover))
         if options.quiet < 2:
             for bucket in leftover:
-                logger.info("Unprocessed bucket: %s %d" % (bucket2time(bucket,
-                                                                       status['bucket_duration']),
-                                                           len(leftover[bucket])))
+                logger.info(
+                    "Unprocessed bucket: %s %d"
+                    % (
+                        bucket2time(bucket, status['bucket_duration']),
+                        len(leftover[bucket]),
+                    )
+                )
 
     mbspostprocess(mbs)
     return (mbs, leftover, last_msec, parsed_lines, skipped_lines)
@@ -416,8 +442,7 @@ def process_bucket(bucket, storage, status, mbs):
             mbs['_request_length_premean'][tags] += row['request_length']
             mbs['_request_time_premean'][tags] += row['request_time']
 
-            tags = (bucket, row['vhost'], row['protocol'],
-                    row['loctag'], row['status'])
+            tags = (bucket, row['vhost'], row['protocol'], row['loctag'], row['status'])
             mbs['status'][tags] += 1
 
             if 'upstreams' in row:
@@ -429,18 +454,41 @@ def process_bucket(bucket, storage, status, mbs):
                 mbs['_upstreams_internal_redirects'][tags] += ru['internal_redirects']
                 mbs['upstreams_servers'][tags] += len(ru['servers'])
                 for upstream in ru['servers']:
-                    tags = (bucket, row['vhost'],
-                            row['protocol'], row['loctag'], upstream)
+                    tags = (
+                        bucket,
+                        row['vhost'],
+                        row['protocol'],
+                        row['loctag'],
+                        upstream,
+                    )
                     mbs['upstreams_hits'][tags] += 1
-                    mbs['_upstreams_response_time_premean'][tags] += ru['response_time'][upstream]
-                    mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][upstream]
-                    mbs['_upstreams_header_time_premean'][tags] += ru['header_time'][upstream]
-                    mbs['_upstreams_response_time_count_premean'][tags] += ru['response_time_count'][upstream]
-                    mbs['_upstreams_connect_time_count_premean'][tags] += ru['connect_time_count'][upstream]
-                    mbs['_upstreams_header_time_count_premean'][tags] += ru['header_time_count'][upstream]
+                    mbs['_upstreams_response_time_premean'][tags] += ru[
+                        'response_time'
+                    ][upstream]
+                    mbs['_upstreams_connect_time_premean'][tags] += ru['connect_time'][
+                        upstream
+                    ]
+                    mbs['_upstreams_header_time_premean'][tags] += ru['header_time'][
+                        upstream
+                    ]
+                    mbs['_upstreams_response_time_count_premean'][tags] += ru[
+                        'response_time_count'
+                    ][upstream]
+                    mbs['_upstreams_connect_time_count_premean'][tags] += ru[
+                        'connect_time_count'
+                    ][upstream]
+                    mbs['_upstreams_header_time_count_premean'][tags] += ru[
+                        'header_time_count'
+                    ][upstream]
                     for status_ in ru['status'][upstream]:
-                        tags = (bucket, row['vhost'], row['protocol'], row['loctag'],
-                                upstream, status_)
+                        tags = (
+                            bucket,
+                            row['vhost'],
+                            row['protocol'],
+                            row['loctag'],
+                            upstream,
+                            status_,
+                        )
                         mbs['upstreams_status'][tags] += 1
         except IndexError:
             break
@@ -497,13 +545,15 @@ def init_logger(options):
     logger.handlers = []
     if options.log_handler == 'syslog':
         hdlr = logging.handlers.SysLogHandler(
-            address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_SYSLOG)
+            address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_SYSLOG
+        )
         formatter = logging.Formatter('%(name)s: %(message)s')
         hdlr.setFormatter(formatter)
     elif options.log_handler == 'stdout':
         hdlr = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter(
-            '%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
+            '%(asctime)s %(process)-5s %(levelname)-8s %(message)s'
+        )
         hdlr.setFormatter(formatter)
     else:
         log_dir = options.log_dir
@@ -511,12 +561,14 @@ def init_logger(options):
             log_dir = options.workdir
         # Logging infrastructure for use throughout the script.
         # Uses appending log file, rotated at 100 MB, keeping 5.
-        if (not os.path.isdir(log_dir)):
+        if not os.path.isdir(log_dir):
             os.mkdir(log_dir)
         formatter = logging.Formatter(
-            '%(asctime)s %(process)-5s %(levelname)-8s %(message)s')
+            '%(asctime)s %(process)-5s %(levelname)-8s %(message)s'
+        )
         hdlr = logging.handlers.RotatingFileHandler(
-            '%s/stats.parser.log' % log_dir, 'a', 100 * 1024 * 1024, 5)
+            f'{log_dir}/stats.parser.log', 'a', 100 * 1024 * 1024, 5
+        )
         hdlr.setFormatter(formatter)
 
     logger.addHandler(hdlr)
@@ -550,14 +602,17 @@ def init_status(files, options, logger):
     status = {}
     try:
         status = load_obj(files['status'].main, logger=logger)
-    except IOError as e:
-        logger.warning("Failed to load status from %s: %s" %
-                       (files['status'].main, e))
+    except OSError as e:
+        logger.warning(
+            "Failed to load status from {}: {}".format(files['status'].main, e)
+        )
 
-    logger.debug("main status: %r" % len(status))
+    logger.debug(f"main status: {len(status)!r}")
 
     save = False
-    for k, v in get_default_status(options.bucket_duration, options.lookback_factor, options.send_failure_fifo_size).items():
+    for k, v in get_default_status(
+        options.bucket_duration, options.lookback_factor, options.send_failure_fifo_size
+    ).items():
         if k not in status:
             status[k] = v()
             save = True
@@ -603,12 +658,9 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
     try:
         workdir = os.path.abspath(options.workdir)
         files = {
-            'offset': SafeFile(workdir, options.file, suffix='.offset',
-                               logger=logger),
-            'status': SafeFile(workdir, options.file, suffix='.status',
-                               logger=logger),
-            'lock': SafeFile(workdir, options.file, suffix='.lock',
-                             logger=logger),
+            'offset': SafeFile(workdir, options.file, suffix='.offset', logger=logger),
+            'status': SafeFile(workdir, options.file, suffix='.status', logger=logger),
+            'lock': SafeFile(workdir, options.file, suffix='.lock', logger=logger),
         }
 
         def unlock(lock):
@@ -624,7 +676,7 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
             lock = Locker(files['lock'].main, lock_type=options.locker, logger=logger)
             atexit.register(unlock, lock)
         except LockingError as e:
-            raise MBStatsLockFileError("Locking error: %s" % e)
+            raise MBStatsLockFileError(f"Locking error: {e}")
 
         backend = InfluxBackend(options, logger=logger)
 
@@ -642,20 +694,27 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
             fatal = False
             msg = 'Error:'
             if status['bucket_duration'] != options.bucket_duration:
-                msg += (" Bucket duration mismatch %d vs %d (set via option)" %
-                        (status['bucket_duration'], options.bucket_duration))
+                msg += " Bucket duration mismatch %d vs %d (set via option)" % (
+                    status['bucket_duration'],
+                    options.bucket_duration,
+                )
                 fatal = True
             if status['lookback_factor'] != options.lookback_factor:
-                msg += (" Lookback factor mismatch %d vs %d (set via option)" %
-                        (status['lookback_factor'], options.lookback_factor))
+                msg += " Lookback factor mismatch %d vs %d (set via option)" % (
+                    status['lookback_factor'],
+                    options.lookback_factor,
+                )
                 fatal = True
             if fatal:
-                msg += (" If you know what you are doing, remove status file %s" %
-                        files['status'].main)
+                msg += " If you know what you are doing, remove status file {}".format(
+                    files['status'].main
+                )
                 raise MBStatsStatusFileError(msg)
 
         parse_start_time = time.time()
-        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(pygtail, status, options, logger=logger, first_loop=first_loop)
+        mbs, leftover, last_msec, parsed_lines, skipped_lines = parsefile(
+            pygtail, status, options, logger=logger, first_loop=first_loop
+        )
         parse_end_time = time.time()
         status['leftover'] = leftover
         status['last_msec'] = last_msec
@@ -667,17 +726,18 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
                 for savedpoints in status['saved_points']:
                     to_resend += savedpoints
                 try:
-                    logger.info("Trying to send %d saved points" %
-                                len(to_resend))
+                    logger.info("Trying to send %d saved points" % len(to_resend))
                     if options.simulate_send_failure:
-                        raise MBStatsSendPointsFailed('Simulating send failure (resend)')
+                        raise MBStatsSendPointsFailed(
+                            'Simulating send failure (resend)'
+                        )
                     if not backend.send_points(tags=tags, points=to_resend):
                         raise MBStatsSendPointsFailed('influx_send failed (resend)')
                     resent_points = len(to_resend)
                     status['saved_points'].clear()
                 except BackendDryRun as e:
                     resent_points = len(to_resend)
-                    logger.debug("Dry run: %s" % e)
+                    logger.debug(f"Dry run: {e}")
                 except MBStatsSendPointsFailed as e:
                     logger.warning(e)
                 except Exception as e:
@@ -693,13 +753,14 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
                     backend.points = None
                 except BackendDryRun as e:
                     sent_points = len(backend.points)
-                    logger.debug("Dry run: %s" % e)
+                    logger.debug(f"Dry run: {e}")
                 except MBStatsSendPointsFailed as e:
                     logger.warning(e)
                     status['saved_points'].append(backend.points)
-                    logger.info("Failed to send, saving points for later %d/%d" %
-                                (len(status['saved_points']),
-                                 options.send_failure_fifo_size))
+                    logger.info(
+                        "Failed to send, saving points for later %d/%d"
+                        % (len(status['saved_points']), options.send_failure_fifo_size)
+                    )
                 except Exception as e:
                     logger.error(e, exc_info=True)
 
@@ -737,18 +798,24 @@ def main_loop(options, logger, start_time=None, first_loop=False, tags=None):
     }
 
     if options.quiet < 2:
-        logger.info("duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_time_per_line_seconds=%0.3fµs" %
-                    (duration_seconds, parsed_lines, parse_duration_seconds, skipped_lines, 1000000.0 * mean_time_per_line_seconds))
-    points = [
-        backend.point_dict('mbstats', own_stats_fields)
-    ]
+        logger.info(
+            "duration=%ss parsed=%d parse_duration=%ss skipped=%d mean_time_per_line_seconds=%0.3fµs"
+            % (
+                duration_seconds,
+                parsed_lines,
+                parse_duration_seconds,
+                skipped_lines,
+                1000000.0 * mean_time_per_line_seconds,
+            )
+        )
+    points = [backend.point_dict('mbstats', own_stats_fields)]
     try:
         if options.simulate_send_failure:
             raise MBStatsSendPointsFailed('Simulating send failure (ownstats)')
         if not backend.send_points(tags=tags, points=points):
             raise MBStatsSendPointsFailed('influx_send failed (ownstats)')
     except BackendDryRun as e:
-        logger.debug("Dry run: %s" % e)
+        logger.debug(f"Dry run: {e}")
     except MBStatsSendPointsFailed as e:
         logger.warning(e)
     except Exception as e:
@@ -769,7 +836,7 @@ def main():
     def signal_handler(signum, frame):
         if signum not in ignored_signals:
             signame = signal.Signals(signum).name
-            raise MBStatsSignalCatched("Got signal: %s" % signame)
+            raise MBStatsSignalCatched(f"Got signal: {signame}")
 
     uncatchable_signals = {
         signal.SIGKILL,
@@ -798,7 +865,9 @@ def main():
         while True:
             start = time.time()
             try:
-                main_loop(options, logger, start_time=start, first_loop=first_loop, tags=tags)
+                main_loop(
+                    options, logger, start_time=start, first_loop=first_loop, tags=tags
+                )
                 first_loop = False
             except (MBStatsSignalCatched, KeyboardInterrupt):
                 raise
@@ -811,10 +880,12 @@ def main():
                 end = time.time()
                 delay = start + options.loop_delay - end
                 if delay > 0.0:
-                    logger.debug("Sleep for %0.3f seconds" % delay)
+                    logger.debug(f"Sleep for {delay:0.3f} seconds")
                     time.sleep(delay)
                 else:
-                    logger.warning("Loop delay might be too short (%0.3f seconds, offset=%0.3f seconds)" % (options.loop_delay, delay))
+                    logger.warning(
+                        f"Loop delay might be too short ({options.loop_delay:0.3f} seconds, offset={delay:0.3f} seconds)"
+                    )
             else:
                 break
         retcode = 0

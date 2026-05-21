@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 #
 # mbstats
 #
@@ -43,7 +41,6 @@
 
 
 class Backend:
-
     def __init__(self, options, logger=None):
         self.options = options
         self.logger = logger

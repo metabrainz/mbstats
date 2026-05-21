@@ -17,50 +17,28 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.11', '3.12']
         os: [ubuntu-22.04, ubuntu-24.04]
     steps:
       - name: Check out the code
         uses: actions/checkout@v6
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: '1.5.1'
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v5
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: venv-${{ runner.os }}-
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
+        run: uv sync --group dev
 
-      - name: Install library
-        run: poetry install --no-interaction
+      - name: Lint with ruff
+        run: uv run ruff check mbstats/
 
-      - name: View poetry --version
-        run: poetry --version
+      - name: Check formatting
+        run: uv run ruff format --check mbstats/ tests/
 
       - name: Test with pytest
-        run: |
-          poetry run python -m pytest -v --cov=mbstats tests/
-      - name: Lint with flake8
-        run: |
-          poetry run flake8 --show-source --statistics --count --ignore E501 mbstats/
-      - name: Lint with pylint
-        run: |
-          poetry run pylint -j0 --exit-zero mbstats
+        run: uv run pytest -v --cov=mbstats tests/
 
 # vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:

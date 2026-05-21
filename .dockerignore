@@ -1,0 +1,10 @@
+.git
+.venv
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+*.egg-info
+tests
+.pre-commit-config.yaml
+.github
