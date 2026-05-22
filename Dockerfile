@@ -10,4 +10,4 @@ COPY mbstats /app/mbstats
 COPY README.md /app/
 RUN uv sync --frozen --no-dev
 
-ENTRYPOINT ["mbstats"]
+CMD ["mbstats"]
