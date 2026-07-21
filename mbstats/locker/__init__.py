@@ -66,7 +66,47 @@ class Locker:
     def lock(self):
         """Acquire a lock via a provided lockfile filename."""
         if os.path.exists(self.lockfile_path):
-            raise LockingError(f"Lock file ({self.lockfile_path}) already exists.")
+            # Check if the lock is stale (PID no longer running)
+            stale = False
+            try:
+                with open(self.lockfile_path) as f:
+                    content = f.read().strip()
+                if not content:
+                    # Empty lock file — previous process died before writing PID
+                    stale = True
+                else:
+                    old_pid = int(content)
+                    if old_pid == os.getpid():
+                        # Same process trying to lock again
+                        raise LockingError(
+                            f"Lock file ({self.lockfile_path}) already held by this process (PID {old_pid})."
+                        )
+                    # Check if process is still alive
+                    os.kill(old_pid, 0)
+                    # Process exists — lock is valid
+                    raise LockingError(
+                        f"Lock file ({self.lockfile_path}) already exists (PID {old_pid} is running)."
+                    )
+            except (ValueError, ProcessLookupError):
+                # PID is invalid or dead — stale lock
+                stale = True
+            except PermissionError:
+                # Can't signal the process — assume it's alive to be safe
+                raise LockingError(f"Lock file ({self.lockfile_path}) already exists.")
+            except LockingError:
+                raise
+            except OSError:
+                raise LockingError(f"Lock file ({self.lockfile_path}) already exists.")
+
+            if stale:
+                if self.logger is not None:
+                    self.logger.warning(
+                        f"Removing stale lock file ({self.lockfile_path})"
+                    )
+                try:
+                    os.unlink(self.lockfile_path)
+                except OSError:
+                    pass
 
         try:
             self.lockfile_fd = open(self.lockfile_path, 'w')
@@ -79,6 +119,7 @@ class Locker:
                     self.lockfile_fd, portalocker.LOCK_EX | portalocker.LOCK_NB
                 )
                 self.lockfile_fd.write(f"{os.getpid()}")
+                self.lockfile_fd.flush()
             except portalocker.LockException as e:
                 raise LockingError(
                     f"Cannot acquire lock on ({self.lockfile_path}): {e}"
@@ -87,6 +128,7 @@ class Locker:
             try:
                 fcntl.flock(self.lockfile_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.lockfile_fd.write(f"{os.getpid()}")
+                self.lockfile_fd.flush()
             except OSError as e:
                 raise LockingError(
                     f"Cannot acquire lock on ({self.lockfile_path}): {e}"
